@@ -9,25 +9,40 @@
   <body>
     <main>
       <h1>Guitar Scales Analyzer</h1>
-      <p>Enter a chord progression (for example: <code>Am F C G</code>).</p>
+      <p>
+        Paste a progression and get key-aware scale ideas, chord functions, and one-click fretboard
+        visualization.
+      </p>
 
       <label for="chords">Chord progression</label>
-      <textarea id="chords" rows="4" placeholder="Am F C G"></textarea>
-      <button id="analyze">Analyze</button>
+      <textarea id="chords" rows="4" placeholder="Am7 D7 Gmaj7 | Cmaj7 Bm7b5 E7 Am"></textarea>
+
+      <div class="action-row">
+        <button id="analyze">Analyze progression</button>
+        <label class="inline-option" for="show-note-labels">
+          <input id="show-note-labels" type="checkbox" checked />
+          Show note labels
+        </label>
+      </div>
+
+      <section id="fretboard-lab">
+        <h2>Fretboard Lab</h2>
+        <p id="fretboard-caption">Pick a suggested scale to render it on the neck.</p>
+        <div class="fretboard-container" id="shared-fretboard"></div>
+      </section>
 
       <section id="whole-song">
-        <h2>Whole Song Scales</h2>
+        <h2>Whole Song Musical Direction</h2>
       </section>
 
       <section id="per-chord">
-        <h2>Per Chord/Part Scales</h2>
+        <h2>Per Chord Strategy</h2>
       </section>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@tonaljs/tonal/browser/tonal.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/svguitar@4.3.2/dist/svguitar.umd.js"></script>
     <script>
-      // Alias svguitar global as `fretboard` to match app.js usage.
       window.fretboard = window.svguitar;
     </script>
     <script src="app.js"></script>
