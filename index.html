@@ -1,1 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Guitar Scales Analyzer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Guitar Scales Analyzer</h1>
+      <p>Enter a chord progression (for example: <code>Am F C G</code>).</p>
 
+      <label for="chords">Chord progression</label>
+      <textarea id="chords" rows="4" placeholder="Am F C G"></textarea>
+      <button id="analyze">Analyze</button>
+
+      <section id="whole-song">
+        <h2>Whole Song Scales</h2>
+      </section>
+
+      <section id="per-chord">
+        <h2>Per Chord/Part Scales</h2>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tonaljs/tonal/browser/tonal.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/svguitar@4.3.2/dist/svguitar.umd.js"></script>
+    <script>
+      // Alias svguitar global as `fretboard` to match app.js usage.
+      window.fretboard = window.svguitar;
+    </script>
+    <script src="app.js"></script>
+  </body>
+</html>
