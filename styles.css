@@ -1,0 +1,6 @@
+body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 1em; }
+textarea { width: 100%; }
+button { padding: 0.5em 1em; }
+.fretboard-container { overflow-x: auto; margin: 1em 0; border: 1px solid #ccc; }
+.fretboard-container svg { min-width: 600px; } /* Ensure scroll on small screens */
+@media (max-width: 600px) { main { flex-direction: column; } }
