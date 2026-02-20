@@ -1,201 +1,310 @@
-// app.js - Enhanced Core Logic for Guitar Scales App
-
-// Flavor descriptions map (concise, non-expert)
 const scaleFlavors = {
-  major: 'Bright and happy, uplifting vibe.',
-  ionian: 'Classic major, joyful and resolved.',
-  minor: 'Sad and introspective, emotional depth.',
-  aeolian: 'Natural minor, melancholic and moody.',
-  dorian: 'Bluesy with a minor feel, groovy and soulful.',
-  phrygian: 'Exotic and tense, Spanish/flamenco flair.',
-  lydian: 'Dreamy and bright, ethereal and floating.',
-  mixolydian: 'Blues-rock dominant, funky and laid-back.',
-  locrian: 'Dark and unstable, tense and dissonant.',
-  'major pentatonic': 'Cheerful and simple, country/rock staple.',
-  'minor pentatonic': 'Bluesy and versatile, rock solo essential.',
-  blues: 'Soulful and gritty, expressive bends.',
-  'harmonic minor': 'Mysterious and dramatic, metal/classical edge.',
-  'melodic minor': 'Jazz smooth, ascending brightness.',
-  arabic: 'Arabesque exotic, Middle Eastern tension and flair' // Hijaz-like for "arabesque"
-  // Add more if needed, e.g., 'whole tone': 'Dreamy and ambiguous, sci-fi feel.'
+  ionian: 'Stable major color for melodic clarity and strong tonic pull.',
+  lydian: 'Modern major brightness with a floating #4 color.',
+  mixolydian: 'Dominant-friendly major sound, perfect for V chords.',
+  dorian: 'Minor with a hopeful 6th, great for ii and modal jams.',
+  aeolian: 'Natural minor gravity and emotional depth.',
+  phrygian: 'Dark and tense minor color with b2 bite.',
+  locrian: 'Half-diminished tension and unstable color.',
+  'major pentatonic': 'Open and consonant major sound for hooks and phrases.',
+  'minor pentatonic': 'Core guitar vocabulary for expressive minor lines.',
+  blues: 'Minor pentatonic + blue note for grit and tension-release.',
+  'harmonic minor': 'Dramatic minor color with strong leading tone.',
+  'melodic minor': 'Jazz-forward minor language with smooth upper structure.'
 };
 
-// Event listener for analyze button
-document.getElementById('analyze').addEventListener('click', analyzeChords);
+const commonScalePriority = [
+  'ionian',
+  'aeolian',
+  'dorian',
+  'mixolydian',
+  'lydian',
+  'minor pentatonic',
+  'major pentatonic',
+  'blues',
+  'harmonic minor',
+  'melodic minor',
+  'phrygian',
+  'locrian'
+];
+
+const chordScaleRules = [
+  { matcher: /maj7|maj9|Δ/i, scales: ['ionian', 'lydian'] },
+  { matcher: /m7b5|ø/i, scales: ['locrian', 'locrian #2'] },
+  { matcher: /m(?!aj)/i, scales: ['dorian', 'aeolian', 'minor pentatonic', 'blues'] },
+  { matcher: /7#11/i, scales: ['lydian dominant', 'mixolydian'] },
+  { matcher: /7b9|7alt|7#9|7#5|7b13/i, scales: ['phrygian dominant', 'altered'] },
+  { matcher: /7/i, scales: ['mixolydian', 'minor pentatonic', 'blues'] },
+  { matcher: /dim|o/i, scales: ['whole-half diminished'] },
+  { matcher: /sus/i, scales: ['mixolydian', 'dorian'] }
+];
+
+const analyzeButton = document.getElementById('analyze');
+const noteLabelCheckbox = document.getElementById('show-note-labels');
+const wholeOutput = document.getElementById('whole-song');
+const perOutput = document.getElementById('per-chord');
+const sharedFretboard = document.getElementById('shared-fretboard');
+const fretboardCaption = document.getElementById('fretboard-caption');
+
+analyzeButton.addEventListener('click', analyzeChords);
 
 function analyzeChords() {
   const input = document.getElementById('chords').value.trim();
   if (!input) {
-    alert('Please enter chords!');
+    alert('Please enter a progression first.');
     return;
   }
 
-  // Parse chords
-  const chordStrs = input.split(/\s+/);
-  const progression = chordStrs.map((str) => Tonal.Chord.get(str)).filter((chord) => !chord.empty);
-  if (progression.length === 0) {
-    alert('No valid chords found! Use formats like "Am", "C", "Gmaj7".');
+  const progression = tokenizeProgression(input)
+    .map((token) => Tonal.Chord.get(token))
+    .filter((chord) => !chord.empty);
+
+  if (!progression.length) {
+    alert('No valid chords found. Try values like Am7 D7 Gmaj7.');
     return;
   }
 
-  // Clear previous outputs
-  const wholeOutput = document.getElementById('whole-song');
-  const perOutput = document.getElementById('per-chord');
-  wholeOutput.innerHTML = '<h2>Whole Song Scales</h2>';
-  perOutput.innerHTML = '<h2>Per Chord/Part Scales</h2>';
+  wholeOutput.innerHTML = '<h2>Whole Song Musical Direction</h2>';
+  perOutput.innerHTML = '<h2>Per Chord Strategy</h2>';
 
-  // Whole song analysis (enhanced for more scales/flavors)
-  const possibleScales = detectProgressionScales(progression);
-  if (possibleScales.length === 0) {
-    wholeOutput.innerHTML +=
-      '<p>No strong scale fits found for the whole progression. Try per-chord suggestions.</p>';
-  } else {
-    possibleScales.slice(0, 5).forEach((scaleInfo) => {
-      // Limit to top 5 diverse flavors
-      const details = document.createElement('details');
-      const summary = document.createElement('summary');
-      summary.textContent = `${scaleInfo.name} (Fit: ${(scaleInfo.score * 100).toFixed(0)}%)`;
-      details.appendChild(summary);
-      const flavorP = document.createElement('p');
-      flavorP.textContent = scaleFlavors[scaleInfo.type] || 'Unique flavor.';
-      details.appendChild(flavorP);
-      wholeOutput.appendChild(details);
+  const keyCandidates = detectKeyCenters(progression);
+  const keySummary = keyCandidates[0];
 
-      const div = document.createElement('div');
-      div.className = 'fretboard-container';
-      wholeOutput.appendChild(div);
+  renderWholeSongInsights(progression, keyCandidates);
+  renderPerChordInsights(progression, keySummary);
+}
 
-      const board = new fretboard.Fretboard({ el: div, fretCount: 15, showNotes: true });
-      board.renderScale({ type: scaleInfo.type, root: scaleInfo.root });
-      board
-        .style({
-          filter: ({ interval }) => interval === '1P', // Root notes
-          fill: 'red',
-          text: ({ note }) => note
-        })
-        .render();
+function tokenizeProgression(input) {
+  return input
+    .replace(/[\n\r]/g, ' ')
+    .replace(/[|,;/]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function detectKeyCenters(progression) {
+  const allNotes = [...new Set(progression.flatMap((chord) => chord.notes))];
+  const roots = getPossibleRoots(progression);
+  const keyCandidates = [];
+
+  roots.forEach((root) => {
+    const majorKey = Tonal.Key.majorKey(root);
+    const minorKey = Tonal.Key.minorKey(root);
+
+    [
+      { mode: 'major', keyObj: majorKey },
+      { mode: 'minor', keyObj: minorKey }
+    ].forEach(({ mode, keyObj }) => {
+      if (!keyObj?.scale?.length) return;
+
+      const noteCoverage = allNotes.filter((n) => keyObj.scale.includes(n)).length / allNotes.length;
+      const chordCoverage = progression.filter((chord) => chord.notes.every((n) => keyObj.scale.includes(n))).length /
+        progression.length;
+      const tonicBonus = progression[0]?.tonic === root ? 0.08 : 0;
+      const score = noteCoverage * 0.6 + chordCoverage * 0.4 + tonicBonus;
+
+      keyCandidates.push({
+        label: `${root} ${mode}`,
+        root,
+        mode,
+        score,
+        scale: keyObj.scale,
+        notes: allNotes,
+        chordCoverage,
+        noteCoverage
+      });
     });
+  });
+
+  return keyCandidates.sort((a, b) => b.score - a.score).slice(0, 4);
+}
+
+function renderWholeSongInsights(progression, keyCandidates) {
+  if (!keyCandidates.length) {
+    wholeOutput.innerHTML += '<p>No convincing key center was detected.</p>';
+    return;
   }
 
-  // Per chord analysis (with flavors)
-  progression.forEach((chord, index) => {
-    const h3 = document.createElement('h3');
-    h3.textContent = `Chord ${index + 1}: ${chord.name}`;
-    perOutput.appendChild(h3);
+  keyCandidates.forEach((keyCandidate, index) => {
+    const block = document.createElement('div');
+    block.className = 'scale-block';
 
-    const scales = getFittingScales(chord);
-    if (scales.length === 0) {
-      perOutput.innerHTML += '<p>No common scales found for this chord.</p>';
+    const h4 = document.createElement('h4');
+    h4.textContent = `${index + 1}. ${keyCandidate.label.toUpperCase()} · confidence ${(keyCandidate.score * 100).toFixed(0)}%`;
+    block.appendChild(h4);
+
+    const p = document.createElement('p');
+    p.className = 'scale-meta';
+    p.textContent = `Scale notes: ${keyCandidate.scale.join(' · ')}`;
+    block.appendChild(p);
+
+    const p2 = document.createElement('p');
+    p2.className = 'summary-note';
+    p2.textContent = `Coverage: notes ${(keyCandidate.noteCoverage * 100).toFixed(0)}% · chords ${(keyCandidate.chordCoverage * 100).toFixed(0)}%`;
+    block.appendChild(p2);
+
+    const functionMap = progression
+      .map((chord) => `${chord.symbol}: ${romanForChord(chord, keyCandidate.scale, keyCandidate.root)}`)
+      .join(' | ');
+    const p3 = document.createElement('p');
+    p3.className = 'summary-note';
+    p3.textContent = `Functional map: ${functionMap}`;
+    block.appendChild(p3);
+
+    const strongScales = suggestGlobalScales(keyCandidate);
+    strongScales.forEach((scale) => {
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = `${scale.name} (${scale.reason})`;
+      block.appendChild(badge);
+
+      const btn = document.createElement('button');
+      btn.className = 'ghost';
+      btn.textContent = `Show ${scale.name}`;
+      btn.addEventListener('click', () => {
+        renderSharedFretboard(scale.root, scale.type, progression[0], `${scale.name}: ${scale.reason}`);
+      });
+      block.appendChild(btn);
+    });
+
+    wholeOutput.appendChild(block);
+  });
+}
+
+function suggestGlobalScales(keyCandidate) {
+  const modeMap = {
+    major: ['ionian', 'lydian', 'major pentatonic'],
+    minor: ['aeolian', 'dorian', 'minor pentatonic', 'blues', 'harmonic minor']
+  };
+
+  return (modeMap[keyCandidate.mode] || ['ionian'])
+    .map((type) => ({
+      root: keyCandidate.root,
+      type,
+      name: `${keyCandidate.root} ${type}`,
+      reason: scaleFlavors[type] || 'Useful harmonic color.'
+    }))
+    .filter((candidate) => !Tonal.Scale.get(candidate.name).empty);
+}
+
+function renderPerChordInsights(progression, primaryKey) {
+  progression.forEach((chord, index) => {
+    const block = document.createElement('div');
+    block.className = 'scale-block';
+
+    const h4 = document.createElement('h4');
+    h4.textContent = `Chord ${index + 1}: ${chord.symbol}`;
+    block.appendChild(h4);
+
+    const fn = document.createElement('p');
+    fn.className = 'summary-note';
+    if (primaryKey) {
+      fn.textContent = `Likely function in ${primaryKey.label}: ${romanForChord(chord, primaryKey.scale, primaryKey.root)}`;
+    } else {
+      fn.textContent = 'Likely function: tonal center unclear, using chord-quality strategy.';
+    }
+    block.appendChild(fn);
+
+    const fittingScales = getChordScaleOptions(chord);
+    if (!fittingScales.length) {
+      const fallback = document.createElement('p');
+      fallback.textContent = 'No direct mapping found.';
+      block.appendChild(fallback);
+      perOutput.appendChild(block);
       return;
     }
 
-    const ul = document.createElement('ul');
-    scales.slice(0, 7).forEach((scaleName) => {
-      // Limit to 7 for variety without clutter
-      const [, ...typeParts] = scaleName.split(' ');
-      const type = typeParts.join(' ');
-      const li = document.createElement('li');
-      const details = document.createElement('details');
-      const summary = document.createElement('summary');
-      summary.textContent = scaleName;
-      details.appendChild(summary);
-      const flavorP = document.createElement('p');
-      flavorP.textContent = scaleFlavors[type] || 'Unique flavor.';
-      details.appendChild(flavorP);
-      li.appendChild(details);
-      ul.appendChild(li);
-    });
-    perOutput.appendChild(ul);
-
-    // Render fretboard for the primary scale (best flavor fit)
-    const primaryScale = scales[0];
-    const [root, ...typeParts] = primaryScale.split(' ');
-    const type = typeParts.join(' ');
-
-    const div = document.createElement('div');
-    div.className = 'fretboard-container';
-    perOutput.appendChild(div);
-
-    const board = new fretboard.Fretboard({ el: div, fretCount: 15, showNotes: true });
-    board.renderScale({ type, root });
-    board
-      .style({
-        filter: ({ note }) => chord.notes.includes(note), // Highlight chord notes in blue
-        fill: 'blue',
-        text: ({ note }) => note
-      })
-      .render();
-  });
-}
-
-// Core Music Logic: Detect fitting scales for the whole progression (enhanced)
-function detectProgressionScales(progression) {
-  const roots = getPossibleRoots(progression); // Prioritize progression tonics
-  const scaleTypes = Object.keys(scaleFlavors); // All modes/flavors
-  const results = [];
-  const allNotes = [...new Set(progression.flatMap((chord) => chord.notes))]; // Union of all notes
-
-  roots.forEach((root) => {
-    scaleTypes.forEach((type) => {
-      const scaleName = `${root} ${type}`;
-      const scale = Tonal.Scale.get(scaleName);
-      if (scale.empty) return;
-
-      // Check if all progression notes are in scale
-      if (!allNotes.every((note) => scale.notes.includes(note))) return;
-
-      let score = 0;
-      progression.forEach((chord) => {
-        if (chord.notes.every((note) => scale.notes.includes(note))) score++;
+    fittingScales.forEach((scale) => {
+      const btn = document.createElement('button');
+      btn.className = 'ghost';
+      btn.textContent = `Show ${scale.name}`;
+      btn.addEventListener('click', () => {
+        renderSharedFretboard(scale.root, scale.type, chord, `${chord.symbol} target: ${scale.reason}`);
       });
-      score /= progression.length;
+      block.appendChild(btn);
 
-      if (score >= 0.8) {
-        // Higher threshold for whole-song accuracy
-        results.push({ name: scaleName, root, type, score });
-      }
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = scale.reason;
+      block.appendChild(badge);
     });
-  });
 
-  // Sort by score desc, then diversity (group commons first)
-  const commonTypes = ['major', 'minor', 'major pentatonic', 'minor pentatonic', 'blues'];
-  return results.sort((a, b) => {
-    const aBonus = roots[0] === a.root ? 0.1 : 0; // Bonus for matching main tonic
-    const bBonus = roots[0] === b.root ? 0.1 : 0;
-    const typeOrderA = commonTypes.includes(a.type) ? -1 : 1;
-    const typeOrderB = commonTypes.includes(b.type) ? -1 : 1;
-    return b.score + bBonus - (a.score + aBonus) || typeOrderA - typeOrderB;
+    perOutput.appendChild(block);
   });
 }
 
-// Helper: Get possible roots (progression tonics first, then all)
-function getPossibleRoots(progression) {
-  const tonicSet = new Set(progression.map((chord) => chord.tonic).filter(Boolean));
-  const allRoots = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
-  return [...tonicSet, ...allRoots.filter((r) => !tonicSet.has(r))];
-}
-
-// Core Music Logic: Get fitting scales for a single chord (expanded)
-function getFittingScales(chord) {
+function getChordScaleOptions(chord) {
   if (!chord.tonic) return [];
 
-  const scaleTypes = Object.keys(scaleFlavors);
+  const qualityMatch = chordScaleRules.find((rule) => rule.matcher.test(chord.symbol || chord.name));
+  const candidateTypes = qualityMatch?.scales?.length
+    ? qualityMatch.scales
+    : ['ionian', 'major pentatonic', 'mixolydian'];
 
-  return scaleTypes
+  return candidateTypes
     .map((type) => {
-      const scaleName = `${chord.tonic} ${type}`;
-      const scale = Tonal.Scale.get(scaleName);
-      const fits = !scale.empty && chord.notes.every((note) => scale.notes.includes(note));
-      return fits ? scaleName : null;
+      const name = `${chord.tonic} ${type}`;
+      const scale = Tonal.Scale.get(name);
+      if (scale.empty) return null;
+
+      const fit = chord.notes.every((note) => scale.notes.includes(note));
+      if (!fit) return null;
+
+      return {
+        root: chord.tonic,
+        type,
+        name,
+        reason: scaleFlavors[type] || `${type} color for ${chord.symbol}`
+      };
     })
     .filter(Boolean)
-    .sort((a, b) => {
-      // Sort for flavor diversity: commons first
-      const commonTypes = ['major', 'minor', 'major pentatonic', 'minor pentatonic', 'blues'];
-      const aType = a.split(' ').slice(1).join(' ');
-      const bType = b.split(' ').slice(1).join(' ');
-      const aCommon = commonTypes.includes(aType) ? -1 : 1;
-      const bCommon = commonTypes.includes(bType) ? -1 : 1;
-      return aCommon - bCommon || a.localeCompare(b);
-    });
+    .sort((a, b) => commonScalePriority.indexOf(a.type) - commonScalePriority.indexOf(b.type));
+}
+
+function romanForChord(chord, scaleNotes, keyRoot) {
+  if (!chord.tonic || !scaleNotes?.length) return 'outside';
+  const romanNumerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+  const idx = scaleNotes.indexOf(chord.tonic);
+  if (idx === -1) return 'outside';
+
+  const numeral = romanNumerals[idx];
+  const symbol = chord.symbol || '';
+  if (/m(?!aj)|dim|ø/i.test(symbol)) return numeral.toLowerCase();
+  if (/7/.test(symbol) && !/maj7/.test(symbol) && idx === 4) return `${numeral}7`;
+  if (/maj7/.test(symbol)) return `${numeral}Δ`;
+  if (/dim|ø/i.test(symbol)) return `${numeral.toLowerCase()}°`;
+  if (/7/.test(symbol)) return `${numeral}7`;
+  return numeral;
+}
+
+function renderSharedFretboard(root, type, chord, captionText) {
+  sharedFretboard.innerHTML = '';
+  const board = new fretboard.Fretboard({
+    el: sharedFretboard,
+    fretCount: 15,
+    showNotes: noteLabelCheckbox.checked
+  });
+
+  board.renderScale({ root, type });
+
+  board
+    .style({
+      filter: ({ interval }) => interval === '1P',
+      fill: '#dc2626',
+      text: ({ note }) => note
+    })
+    .style({
+      filter: ({ note }) => chord?.notes?.includes(note),
+      fill: '#2563eb',
+      text: ({ note }) => note
+    })
+    .render();
+
+  fretboardCaption.textContent = captionText;
+}
+
+function getPossibleRoots(progression) {
+  const tonicSet = new Set(progression.map((chord) => chord.tonic).filter(Boolean));
+  const chromatic = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+  return [...tonicSet, ...chromatic.filter((note) => !tonicSet.has(note))];
 }
