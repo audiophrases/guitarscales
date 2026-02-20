@@ -41,12 +41,40 @@ const chordScaleRules = [
 
 const analyzeButton = document.getElementById('analyze');
 const noteLabelCheckbox = document.getElementById('show-note-labels');
+const runtimeStatus = document.getElementById('runtime-status');
 const wholeOutput = document.getElementById('whole-song');
 const perOutput = document.getElementById('per-chord');
 const sharedFretboard = document.getElementById('shared-fretboard');
 const fretboardCaption = document.getElementById('fretboard-caption');
 
-analyzeButton.addEventListener('click', analyzeChords);
+initializeApp();
+
+function initializeApp() {
+  if (!window.Tonal) {
+    analyzeButton.disabled = true;
+    setRuntimeStatus('Analysis is unavailable because the Tonal library failed to load.');
+    return;
+  }
+
+  analyzeButton.disabled = false;
+  setRuntimeStatus('');
+  analyzeButton.addEventListener('click', analyzeChords);
+
+  if (!getFretboardApi()) {
+    fretboardCaption.textContent =
+      'Fretboard visualization is currently unavailable. Scale suggestions still work below.';
+  }
+}
+
+function setRuntimeStatus(message) {
+  if (!runtimeStatus) return;
+  runtimeStatus.textContent = message;
+}
+
+function getFretboardApi() {
+  if (window.fretboard?.Fretboard) return window.fretboard;
+  return null;
+}
 
 function analyzeChords() {
   const input = document.getElementById('chords').value.trim();
@@ -278,8 +306,15 @@ function romanForChord(chord, scaleNotes, keyRoot) {
 }
 
 function renderSharedFretboard(root, type, chord, captionText) {
+  const fretboardApi = getFretboardApi();
+  if (!fretboardApi) {
+    fretboardCaption.textContent =
+      'Cannot render fretboard right now because the fretboard library is unavailable.';
+    return;
+  }
+
   sharedFretboard.innerHTML = '';
-  const board = new fretboard.Fretboard({
+  const board = new fretboardApi.Fretboard({
     el: sharedFretboard,
     fretCount: 15,
     showNotes: noteLabelCheckbox.checked

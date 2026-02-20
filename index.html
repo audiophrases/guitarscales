@@ -16,6 +16,7 @@
 
       <label for="chords">Chord progression</label>
       <textarea id="chords" rows="4" placeholder="Am7 D7 Gmaj7 | Cmaj7 Bm7b5 E7 Am"></textarea>
+      <p id="runtime-status" class="summary-note" aria-live="polite"></p>
 
       <div class="action-row">
         <button id="analyze">Analyze progression</button>
@@ -40,11 +41,30 @@
       </section>
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/@tonaljs/tonal/browser/tonal.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/svguitar@4.3.2/dist/svguitar.umd.js"></script>
     <script>
-      window.fretboard = window.svguitar;
+      window.reportDependencyError = function reportDependencyError(name, url) {
+        console.error(`Failed to load ${name} from ${url}`);
+        const runtimeStatus = document.getElementById('runtime-status');
+        if (runtimeStatus) {
+          runtimeStatus.textContent = `${name} failed to load. Some features are unavailable.`;
+        }
+
+        if (name.toLowerCase().includes('fretboard')) {
+          const fretboardCaption = document.getElementById('fretboard-caption');
+          if (fretboardCaption) {
+            fretboardCaption.textContent = 'Fretboard visualization is unavailable because a script failed to load.';
+          }
+        }
+      };
     </script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@tonaljs/tonal/browser/tonal.min.js"
+      onerror="window.reportDependencyError('Tonal', this.src)"
+    ></script>
+    <script
+      src="https://unpkg.com/@moonwave99/fretboard.js/dist/fretboard.umd.js"
+      onerror="window.reportDependencyError('Fretboard library', this.src)"
+    ></script>
     <script src="app.js"></script>
   </body>
 </html>
