@@ -60,8 +60,8 @@ const audioState = {
   selectedOutput: 'synth'
 };
 
-const chordRoots = ['C', 'C#', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
-const chordQualities = ['maj7', 'm7', '7', 'm', 'm7b5', 'dim', 'sus4', '6', '9'];
+const chordRoots = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const chordQualities = ['m', '7', 'm7', 'maj7', 'sus4', '6', '9', 'm7b5', 'dim'];
 
 initializeApp();
 
@@ -96,7 +96,7 @@ function setupChordBuilder() {
 
   const majorOption = document.createElement('option');
   majorOption.value = '';
-  majorOption.textContent = 'major (default)';
+  majorOption.textContent = '—';
   chordQualitySelect.appendChild(majorOption);
 
   chordQualities.forEach((quality) => {
@@ -221,7 +221,7 @@ function onFretboardClick(event) {
 
 function extractNoteFromFretboardTarget(target) {
   if (!target) return null;
-  const noteRegex = /([A-G](?:#|b)?)/;
+  const noteRegex = /([A-G](?:#|b|♯|♭)?)/;
 
   const candidates = [
     target?.dataset?.note,
@@ -236,7 +236,7 @@ function extractNoteFromFretboardTarget(target) {
 
   let note = null;
   for (const candidate of candidates) {
-    const match = String(candidate).match(noteRegex);
+    const match = normalizeNoteName(String(candidate)).match(noteRegex);
     if (match) {
       note = match[1];
       break;
@@ -312,7 +312,7 @@ function resolveMidiForFretboardNote(note, location) {
 
 async function playChordNotes(notes = []) {
   await ensureAudioReady();
-  notes.forEach((note, index) => playNote(note, 0.85, index * 0.04));
+  notes.forEach((note) => playNote(note, 0.85, 0));
 }
 
 async function playNote(note, duration = 0.7, offset = 0, forcedMidi = null) {
@@ -826,7 +826,32 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
     })
     .render();
 
+  attachFretboardNoteMetadata();
+
   fretboardCaption.textContent = captionText;
+}
+
+function attachFretboardNoteMetadata() {
+  const noteGroups = sharedFretboard.querySelectorAll('g');
+  noteGroups.forEach((group) => {
+    const textNode = group.querySelector('text');
+    const labelSource =
+      textNode?.textContent || group.getAttribute('aria-label') || group.getAttribute('data-note') || '';
+    const normalized = normalizeNoteName(labelSource);
+    const noteMatch = normalized.match(/([A-G](?:#|b)?)/);
+    if (!noteMatch) return;
+
+    const note = noteMatch[1];
+    group.setAttribute('data-note', note);
+    group.querySelectorAll('*').forEach((node) => node.setAttribute('data-note', note));
+  });
+}
+
+function normalizeNoteName(value = '') {
+  return String(value)
+    .replaceAll('♯', '#')
+    .replaceAll('♭', 'b')
+    .trim();
 }
 
 function isSamePitchClass(a, b) {
