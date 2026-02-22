@@ -74,12 +74,6 @@ function initializeApp() {
   setupAudioControls();
   setRuntimeStatus('');
   addChordButton.addEventListener('click', addSelectedChord);
-  sharedFretboard.addEventListener('click', onFretboardClick);
-
-  if (!getFretboardApi()) {
-    fretboardCaption.textContent =
-      'Fretboard visualization is currently unavailable. Scale suggestions still work below.';
-  }
 
   analyzeChords();
 }
@@ -402,10 +396,6 @@ function setRuntimeStatus(message) {
   runtimeStatus.textContent = message;
 }
 
-function getFretboardApi() {
-  if (window.fretboard?.Fretboard) return window.fretboard;
-  return null;
-}
 
 function analyzeChords() {
   const progression = chordProgressionTokens
@@ -824,48 +814,71 @@ function romanForChord(chord, scaleNotes, keyRoot) {
 }
 
 function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = []) {
-  const fretboardApi = getFretboardApi();
-  if (!fretboardApi) {
-    fretboardCaption.textContent =
-      'Cannot render fretboard right now because the fretboard library is unavailable.';
-    return;
-  }
+  const tuning = ['E4', 'B3', 'G3', 'D3', 'A2', 'E2'];
+  const fretCount = 15;
+  const scaleNotes = Tonal.Scale.get(`${root} ${type}`).notes || [];
+  const chordNotes = chord?.notes || [];
+  const nextNotes = nextChordNotes || [];
 
   sharedFretboard.innerHTML = '';
-  const board = new fretboardApi.Fretboard({
-    el: sharedFretboard,
-    fretCount: 15,
-    showNotes: true
+  audioState.noteMap = new Map();
+
+  const grid = document.createElement('div');
+  grid.className = 'fretboard-grid';
+
+  const fretHeader = document.createElement('div');
+  fretHeader.className = 'fretboard-row';
+  fretHeader.appendChild(Object.assign(document.createElement('span'), { className: 'string-label', textContent: '' }));
+
+  for (let fret = 0; fret <= fretCount; fret += 1) {
+    const fretLabel = document.createElement('span');
+    fretLabel.className = 'fret-index';
+    fretLabel.textContent = String(fret);
+    fretHeader.appendChild(fretLabel);
+  }
+  grid.appendChild(fretHeader);
+
+  tuning.forEach((openString, idx) => {
+    const stringNumber = idx + 1;
+    const row = document.createElement('div');
+    row.className = 'fretboard-row';
+
+    const label = document.createElement('span');
+    label.className = 'string-label';
+    label.textContent = `${openString.slice(0, -1)}${stringNumber}`;
+    row.appendChild(label);
+
+    const openMidi = Tonal.Note.midi(openString);
+
+    for (let fret = 0; fret <= fretCount; fret += 1) {
+      const midi = openMidi + fret;
+      const note = Tonal.Note.pitchClass(Tonal.Note.fromMidi(midi));
+      const noteButton = document.createElement('button');
+      noteButton.type = 'button';
+      noteButton.className = 'fret-note';
+      noteButton.textContent = note;
+      noteButton.title = `Play ${note} (string ${stringNumber}, fret ${fret})`;
+      noteButton.dataset.note = note;
+      noteButton.dataset.midi = String(midi);
+      noteButton.dataset.string = String(stringNumber);
+      noteButton.dataset.fret = String(fret);
+
+      const inScale = scaleNotes.some((scaleNote) => isSamePitchClass(scaleNote, note));
+      const inChord = chordNotes.some((chordNote) => isSamePitchClass(chordNote, note));
+      const inNextChord = nextNotes.some((nextNote) => isSamePitchClass(nextNote, note));
+      if (inScale || inChord || inNextChord) {
+        noteButton.classList.add('is-active');
+      }
+
+      noteButton.addEventListener('click', () => playNote(note, 0.6, 0, midi));
+      row.appendChild(noteButton);
+      audioState.noteMap.set(`${stringNumber}:${fret}`, { note, midi });
+    }
+
+    grid.appendChild(row);
   });
 
-  board.renderScale({ root, type });
-  const tonicPitchClass = Tonal.Note.pitchClass(root) || root;
-
-  board
-    .style({
-      filter: () => true,
-      fill: '#e2e8f0',
-      text: ({ note }) => note
-    })
-    .style({
-      filter: ({ note }) => chord?.notes?.some((chordNote) => isSamePitchClass(chordNote, note)),
-      fill: '#3b82f6',
-      text: ({ note }) => note
-    })
-    .style({
-      filter: ({ note }) => nextChordNotes.some((nextNote) => isSamePitchClass(nextNote, note)),
-      fill: '#22c55e',
-      text: ({ note }) => note
-    })
-    .style({
-      filter: ({ note }) => isSamePitchClass(note, tonicPitchClass),
-      fill: '#ef4444',
-      text: ({ note }) => note
-    })
-    .render();
-
-  attachFretboardNoteMetadata();
-
+  sharedFretboard.appendChild(grid);
   fretboardCaption.textContent = captionText;
 }
 
