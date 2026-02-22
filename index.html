@@ -14,12 +14,16 @@
         hit, plus chord functions, cadence detection, and a note-by-note navigator for voice-leading.
       </p>
 
-      <label for="chords">Chord progression</label>
-      <textarea id="chords" rows="4" placeholder="Am7 D7 Gmaj7 | Cmaj7 Bm7b5 E7 Am"></textarea>
+      <label for="chord-root">Build chord progression</label>
+      <div class="chord-builder">
+        <select id="chord-root" aria-label="Chord root"></select>
+        <select id="chord-quality" aria-label="Chord quality"></select>
+        <button id="add-chord" type="button">Add chord</button>
+      </div>
+      <div id="selected-chords" class="selected-chords" aria-live="polite"></div>
       <p id="runtime-status" class="summary-note" aria-live="polite"></p>
 
       <div class="action-row">
-        <button id="analyze">Analyze progression</button>
         <label class="inline-option" for="show-note-labels">
           <input id="show-note-labels" type="checkbox" checked />
           Show note labels
@@ -28,7 +32,12 @@
 
       <section id="fretboard-lab">
         <h2>Fretboard Lab</h2>
-        <p id="fretboard-caption">Pick a suggested scale to render it on the neck.</p>
+        <p id="fretboard-caption">Select or add chords to instantly update the fretboard map.</p>
+        <div class="note-legend" id="note-legend">
+          <span><i class="swatch tonic"></i>Tonic</span>
+          <span><i class="swatch chord"></i>Active chord tones</span>
+          <span><i class="swatch next"></i>Next-chord targets</span>
+        </div>
         <div class="fretboard-container" id="shared-fretboard"></div>
       </section>
 

@@ -39,7 +39,10 @@ const chordScaleRules = [
   { matcher: /sus/i, scales: ['mixolydian', 'dorian'] }
 ];
 
-const analyzeButton = document.getElementById('analyze');
+const chordRootSelect = document.getElementById('chord-root');
+const chordQualitySelect = document.getElementById('chord-quality');
+const addChordButton = document.getElementById('add-chord');
+const selectedChords = document.getElementById('selected-chords');
 const noteLabelCheckbox = document.getElementById('show-note-labels');
 const runtimeStatus = document.getElementById('runtime-status');
 const wholeOutput = document.getElementById('whole-song');
@@ -47,24 +50,87 @@ const perOutput = document.getElementById('per-chord');
 const geniusOutput = document.getElementById('genius-guide');
 const sharedFretboard = document.getElementById('shared-fretboard');
 const fretboardCaption = document.getElementById('fretboard-caption');
+const chordProgressionTokens = [];
+
+const chordRoots = ['C', 'C#', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+const chordQualities = ['maj7', 'm7', '7', 'm', 'maj', 'm7b5', 'dim', 'sus4', '6', '9'];
 
 initializeApp();
 
 function initializeApp() {
   if (!window.Tonal) {
-    analyzeButton.disabled = true;
     setRuntimeStatus('Analysis is unavailable because the Tonal library failed to load.');
     return;
   }
 
-  analyzeButton.disabled = false;
+  setupChordBuilder();
   setRuntimeStatus('');
-  analyzeButton.addEventListener('click', analyzeChords);
+  addChordButton.addEventListener('click', addSelectedChord);
+  noteLabelCheckbox.addEventListener('change', analyzeChords);
 
   if (!getFretboardApi()) {
     fretboardCaption.textContent =
       'Fretboard visualization is currently unavailable. Scale suggestions still work below.';
   }
+
+  analyzeChords();
+}
+
+function setupChordBuilder() {
+  chordRoots.forEach((root) => {
+    const option = document.createElement('option');
+    option.value = root;
+    option.textContent = root;
+    chordRootSelect.appendChild(option);
+  });
+
+  chordQualities.forEach((quality) => {
+    const option = document.createElement('option');
+    option.value = quality;
+    option.textContent = quality;
+    chordQualitySelect.appendChild(option);
+  });
+
+  ['Am7', 'D7', 'Gmaj7'].forEach((defaultChord) => chordProgressionTokens.push(defaultChord));
+  renderSelectedChords();
+}
+
+function addSelectedChord() {
+  const chord = `${chordRootSelect.value}${chordQualitySelect.value}`;
+  const parsed = Tonal.Chord.get(chord);
+  if (parsed.empty) {
+    setRuntimeStatus('That chord quality/root pairing is not recognized.');
+    return;
+  }
+
+  chordProgressionTokens.push(chord);
+  renderSelectedChords();
+  analyzeChords();
+}
+
+function removeChord(index) {
+  chordProgressionTokens.splice(index, 1);
+  renderSelectedChords();
+  analyzeChords();
+}
+
+function renderSelectedChords() {
+  selectedChords.innerHTML = '';
+
+  if (!chordProgressionTokens.length) {
+    selectedChords.innerHTML = '<p class="summary-note">No chords selected yet. Add chords above to begin.</p>';
+    return;
+  }
+
+  chordProgressionTokens.forEach((token, index) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chord-chip';
+    chip.textContent = `${index + 1}. ${token}`;
+    chip.title = 'Click to remove this chord';
+    chip.addEventListener('click', () => removeChord(index));
+    selectedChords.appendChild(chip);
+  });
 }
 
 function setRuntimeStatus(message) {
@@ -78,18 +144,15 @@ function getFretboardApi() {
 }
 
 function analyzeChords() {
-  const input = document.getElementById('chords').value.trim();
-  if (!input) {
-    alert('Please enter a progression first.');
-    return;
-  }
-
-  const progression = tokenizeProgression(input)
+  const progression = chordProgressionTokens
     .map((token) => Tonal.Chord.get(token))
     .filter((chord) => !chord.empty);
 
   if (!progression.length) {
-    alert('No valid chords found. Try values like Am7 D7 Gmaj7.');
+    wholeOutput.innerHTML = '<h2>Whole Song Musical Direction</h2><p>Add at least one chord to generate scale ideas.</p>';
+    perOutput.innerHTML = '<h2>Per Chord Strategy</h2>';
+    geniusOutput.innerHTML = '<h2>Genius Note Navigator</h2>';
+    renderSharedFretboard('C', 'ionian', { notes: [] }, 'Waiting for chords. Showing C ionian as a neutral map.', []);
     return;
   }
 
@@ -103,14 +166,15 @@ function analyzeChords() {
   renderWholeSongInsights(progression, keyCandidates);
   renderPerChordInsights(progression, keySummary);
   renderGeniusNavigator(progression, keySummary);
-}
 
-function tokenizeProgression(input) {
-  return input
-    .replace(/[\n\r]/g, ' ')
-    .replace(/[|,;/]+/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean);
+  const focusScale = keySummary ? { root: keySummary.root, type: keySummary.mode === 'minor' ? 'aeolian' : 'ionian' } : { root: progression[0].tonic, type: 'ionian' };
+  renderSharedFretboard(
+    focusScale.root,
+    focusScale.type,
+    progression[0],
+    `Live map: ${focusScale.root} ${focusScale.type} over ${progression[0].symbol}`,
+    progression[1]?.notes || []
+  );
 }
 
 function detectKeyCenters(progression) {
@@ -495,7 +559,7 @@ function romanForChord(chord, scaleNotes, keyRoot) {
   return numeral;
 }
 
-function renderSharedFretboard(root, type, chord, captionText) {
+function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = []) {
   const fretboardApi = getFretboardApi();
   if (!fretboardApi) {
     fretboardCaption.textContent =
@@ -515,12 +579,17 @@ function renderSharedFretboard(root, type, chord, captionText) {
   board
     .style({
       filter: ({ interval }) => interval === '1P',
-      fill: '#dc2626',
+      fill: '#ef4444',
       text: ({ note }) => note
     })
     .style({
       filter: ({ note }) => chord?.notes?.includes(note),
-      fill: '#2563eb',
+      fill: '#3b82f6',
+      text: ({ note }) => note
+    })
+    .style({
+      filter: ({ note }) => nextChordNotes.includes(note),
+      fill: '#22c55e',
       text: ({ note }) => note
     })
     .render();
