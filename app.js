@@ -398,7 +398,7 @@ function analyzeChords() {
     focusScale.root,
     focusScale.type,
     progression[0],
-    `Live map: ${focusScale.root} ${focusScale.type} over ${progression[0].symbol}`,
+    `${focusScale.root} ${focusScale.type} over ${progression[0].symbol}`,
     progression[1]?.notes || []
   );
 }
