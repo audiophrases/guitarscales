@@ -43,8 +43,6 @@ const chordRootSelect = document.getElementById('chord-root');
 const chordQualitySelect = document.getElementById('chord-quality');
 const addChordButton = document.getElementById('add-chord');
 const selectedChords = document.getElementById('selected-chords');
-const noteLabelCheckbox = document.getElementById('show-note-labels');
-const audioEnableButton = document.getElementById('audio-enable');
 const midiOutputSelect = document.getElementById('midi-output-select');
 const runtimeStatus = document.getElementById('runtime-status');
 const wholeOutput = document.getElementById('whole-song');
@@ -57,7 +55,8 @@ const audioState = {
   context: null,
   masterGain: null,
   midiAccess: null,
-  selectedOutput: 'synth'
+  selectedOutput: 'synth',
+  noteMap: new Map()
 };
 
 const chordRoots = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -75,7 +74,6 @@ function initializeApp() {
   setupAudioControls();
   setRuntimeStatus('');
   addChordButton.addEventListener('click', addSelectedChord);
-  noteLabelCheckbox.addEventListener('change', analyzeChords);
   sharedFretboard.addEventListener('click', onFretboardClick);
 
   if (!getFretboardApi()) {
@@ -167,15 +165,9 @@ function renderSelectedChords() {
 }
 
 function setupAudioControls() {
-  audioEnableButton?.addEventListener('click', async () => {
-    await ensureAudioReady();
-    if (audioState.context?.state === 'suspended') await audioState.context.resume();
-    setRuntimeStatus('Audio ready. Click a chord or fretboard note to hear it.');
-  });
-
   midiOutputSelect?.addEventListener('change', () => {
     audioState.selectedOutput = midiOutputSelect.value;
-    const label = audioState.selectedOutput === 'synth' ? 'Web Audio synth' : `MIDI: ${audioState.selectedOutput}`;
+    const label = audioState.selectedOutput === 'synth' ? 'Built-in output' : `MIDI: ${audioState.selectedOutput}`;
     setRuntimeStatus(`Playback output set to ${label}.`);
   });
 
@@ -207,7 +199,7 @@ function rebuildMidiOutputSelectOptions() {
 
   const synthOption = document.createElement('option');
   synthOption.value = 'synth';
-  synthOption.textContent = 'Web Audio synth';
+  synthOption.textContent = 'Built-in output';
   midiOutputSelect.appendChild(synthOption);
 
   outputs.forEach((output) => {
@@ -226,12 +218,15 @@ function handleMidiStateChange() {
   rebuildMidiOutputSelectOptions();
 
   if (previousSelected !== 'synth' && audioState.selectedOutput === 'synth') {
-    setRuntimeStatus('Selected MIDI output became unavailable. Falling back to Web Audio synth.');
+    setRuntimeStatus('Selected MIDI output became unavailable. Falling back to built-in output.');
   }
 }
 
 async function ensureAudioReady() {
-  if (audioState.context) return;
+  if (audioState.context) {
+    if (audioState.context.state === 'suspended') await audioState.context.resume();
+    return;
+  }
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) {
     setRuntimeStatus('Audio playback is not supported by this browser.');
@@ -277,9 +272,10 @@ function extractNoteFromFretboardTarget(target) {
   if (!note) return null;
 
   const location = extractFretboardLocation(target);
+  const explicitMidi = Number(target?.dataset?.midi || target?.getAttribute?.('data-midi'));
   return {
     note,
-    midi: resolveMidiForFretboardNote(note, location)
+    midi: Number.isFinite(explicitMidi) ? explicitMidi : resolveMidiForFretboardNote(note, location)
   };
 }
 
@@ -308,6 +304,15 @@ function matchIndex(text, regex) {
   if (!text) return null;
   const found = String(text).match(regex);
   return found?.[1] || null;
+}
+
+function resolveMidiFromStringAndFret(location) {
+  if (!location || Number.isNaN(location.fret) || Number.isNaN(location.string)) return null;
+  const stringIdx = location.string - 1;
+  const openStrings = ['E4', 'B3', 'G3', 'D3', 'A2', 'E2'];
+  const openMidi = Tonal.Note.midi(openStrings[stringIdx]);
+  if (openMidi === null || openMidi === undefined) return null;
+  return openMidi + location.fret;
 }
 
 function resolveMidiForFretboardNote(note, location) {
@@ -379,7 +384,7 @@ function getSelectedMidiOutput() {
 
   audioState.selectedOutput = 'synth';
   if (midiOutputSelect) midiOutputSelect.value = 'synth';
-  setRuntimeStatus('Selected MIDI output is no longer available. Falling back to Web Audio synth.');
+  setRuntimeStatus('Selected MIDI output is no longer available. Falling back to built-in output.');
   return null;
 }
 
@@ -830,7 +835,7 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
   const board = new fretboardApi.Fretboard({
     el: sharedFretboard,
     fretCount: 15,
-    showNotes: noteLabelCheckbox.checked
+    showNotes: true
   });
 
   board.renderScale({ root, type });
@@ -865,6 +870,7 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
 }
 
 function attachFretboardNoteMetadata() {
+  audioState.noteMap = new Map();
   const noteGroups = sharedFretboard.querySelectorAll('g');
   noteGroups.forEach((group) => {
     const textNode = group.querySelector('text');
@@ -876,15 +882,22 @@ function attachFretboardNoteMetadata() {
 
     const note = noteMatch[1];
     const location = inferFretboardLocation(group);
+    const midi = location ? resolveMidiFromStringAndFret(location) : null;
 
     group.setAttribute('data-note', note);
     if (location) {
       group.setAttribute('data-string', String(location.string));
       group.setAttribute('data-fret', String(location.fret));
     }
+    if (midi !== null) group.setAttribute('data-midi', String(midi));
+
+    if (location && midi !== null) {
+      audioState.noteMap.set(`${location.string}:${location.fret}`, { note, midi });
+    }
 
     group.querySelectorAll('*').forEach((node) => {
       node.setAttribute('data-note', note);
+      if (midi !== null) node.setAttribute('data-midi', String(midi));
       if (!location) return;
       node.setAttribute('data-string', String(location.string));
       node.setAttribute('data-fret', String(location.fret));
