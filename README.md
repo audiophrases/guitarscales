@@ -4,6 +4,8 @@ A lightweight web app that analyzes a chord progression and suggests:
 
 - **Whole-song compatible scales** with fit scores and flavor notes.
 - **Per-chord scale options** with concise musical flavor descriptions.
+- **Genius Note Navigator** that recommends best target notes and micro-lines for each chord movement.
+- **Cadence-aware insights** to expose ii-V-I and other functional movement in progressions.
 - **Fretboard visualizations** for quick practice and improvisation ideas.
 
 ## Project structure
@@ -30,15 +32,16 @@ Then visit: `http://localhost:8000`
 
 1. Enter chords in the textarea (for example: `Am F C G`).
 2. Click **Analyze**.
-3. Explore scale suggestions for:
-   - the whole progression, and
-   - each individual chord.
+3. Explore three analysis views:
+   - whole-song direction and key confidence,
+   - per-chord strategy and scale choices,
+   - genius note navigator for best-note and voice-leading suggestions.
 
 ## Notes
 
 - The app uses CDN-hosted dependencies:
   - Tonal (`@tonaljs/tonal`)
-  - SVGuitar (`svguitar`)
+  - Fretboard.js (`@moonwave99/fretboard.js`)
 - Some unusual scale names may not be recognized for every tonic.
 
 ## Contributing

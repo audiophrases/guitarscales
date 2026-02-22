@@ -124,3 +124,7 @@ section {
     min-width: 620px;
   }
 }
+
+.note-block strong {
+  color: #0b3aa2;
+}

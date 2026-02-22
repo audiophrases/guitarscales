@@ -44,6 +44,7 @@ const noteLabelCheckbox = document.getElementById('show-note-labels');
 const runtimeStatus = document.getElementById('runtime-status');
 const wholeOutput = document.getElementById('whole-song');
 const perOutput = document.getElementById('per-chord');
+const geniusOutput = document.getElementById('genius-guide');
 const sharedFretboard = document.getElementById('shared-fretboard');
 const fretboardCaption = document.getElementById('fretboard-caption');
 
@@ -94,12 +95,14 @@ function analyzeChords() {
 
   wholeOutput.innerHTML = '<h2>Whole Song Musical Direction</h2>';
   perOutput.innerHTML = '<h2>Per Chord Strategy</h2>';
+  geniusOutput.innerHTML = '<h2>Genius Note Navigator</h2>';
 
   const keyCandidates = detectKeyCenters(progression);
   const keySummary = keyCandidates[0];
 
   renderWholeSongInsights(progression, keyCandidates);
   renderPerChordInsights(progression, keySummary);
+  renderGeniusNavigator(progression, keySummary);
 }
 
 function tokenizeProgression(input) {
@@ -129,7 +132,8 @@ function detectKeyCenters(progression) {
       const chordCoverage = progression.filter((chord) => chord.notes.every((n) => keyObj.scale.includes(n))).length /
         progression.length;
       const tonicBonus = progression[0]?.tonic === root ? 0.08 : 0;
-      const score = noteCoverage * 0.6 + chordCoverage * 0.4 + tonicBonus;
+      const cadenceBonus = cadenceBonusForKey(progression, keyObj.scale, root);
+      const score = noteCoverage * 0.55 + chordCoverage * 0.35 + tonicBonus + cadenceBonus;
 
       keyCandidates.push({
         label: `${root} ${mode}`,
@@ -145,6 +149,20 @@ function detectKeyCenters(progression) {
   });
 
   return keyCandidates.sort((a, b) => b.score - a.score).slice(0, 4);
+}
+
+function cadenceBonusForKey(progression, scaleNotes, root) {
+  let bonus = 0;
+  progression.forEach((chord, idx) => {
+    const next = progression[idx + 1];
+    if (!next) return;
+    const rn = romanForChord(chord, scaleNotes, root);
+    const nextRn = romanForChord(next, scaleNotes, root);
+    if (/ii/i.test(rn) && /V7?/.test(nextRn)) bonus += 0.015;
+    if (/V7?/.test(rn) && /I/i.test(nextRn)) bonus += 0.03;
+    if (/iv/i.test(rn) && /V7?/.test(nextRn)) bonus += 0.012;
+  });
+  return Math.min(bonus, 0.09);
 }
 
 function renderWholeSongInsights(progression, keyCandidates) {
@@ -259,6 +277,178 @@ function renderPerChordInsights(progression, primaryKey) {
 
     perOutput.appendChild(block);
   });
+}
+
+function renderGeniusNavigator(progression, keySummary) {
+  if (!progression.length) return;
+
+  const analysis = progression.map((chord, index) => {
+    const nextChord = progression[index + 1] || null;
+    return analyzeBestNote(chord, nextChord, keySummary);
+  });
+
+  const cadenceSummary = summarizeCadences(progression, keySummary);
+  const cadence = document.createElement('p');
+  cadence.className = 'summary-note';
+  cadence.textContent = cadenceSummary;
+  geniusOutput.appendChild(cadence);
+
+  analysis.forEach((entry, index) => {
+    const block = document.createElement('div');
+    block.className = 'scale-block note-block';
+
+    const header = document.createElement('h4');
+    header.textContent = `${index + 1}. ${entry.chord} → ${entry.nextChord || 'end'}`;
+    block.appendChild(header);
+
+    const best = document.createElement('p');
+    best.innerHTML = `<strong>Best note:</strong> ${entry.bestNote} <span class="summary-note">(${entry.reason})</span>`;
+    block.appendChild(best);
+
+    const alt = document.createElement('p');
+    alt.className = 'summary-note';
+    alt.textContent = `Alternatives: ${entry.alternatives.join(' · ')}`;
+    block.appendChild(alt);
+
+    const microLine = document.createElement('p');
+    microLine.className = 'summary-note';
+    microLine.textContent = `Micro-line: ${entry.microLine.join(' → ')}`;
+    block.appendChild(microLine);
+
+    geniusOutput.appendChild(block);
+  });
+}
+
+function analyzeBestNote(chord, nextChord, keySummary) {
+  const chordNotes = chord.notes || [];
+  const extensionPool = getExtensionPool(chord, keySummary);
+  const candidates = [...new Set([...chordNotes, ...extensionPool])];
+
+  const ranked = candidates
+    .map((note) => ({
+      note,
+      score: scoreCandidateNote(note, chord, nextChord, keySummary)
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const best = ranked[0]?.note || chord.tonic || chord.symbol;
+  const alt = ranked.slice(1, 4).map((item) => item.note);
+  const target = nextChord ? pickClosestResolution(best, nextChord.notes) : best;
+
+  return {
+    chord: chord.symbol,
+    nextChord: nextChord?.symbol,
+    bestNote: best,
+    alternatives: alt.length ? alt : chordNotes.slice(0, 3),
+    microLine: [best, target, nextChord?.tonic || best],
+    reason: buildNoteReason(best, chord, nextChord, keySummary)
+  };
+}
+
+function scoreCandidateNote(note, chord, nextChord, keySummary) {
+  const chordNotes = chord.notes || [];
+  let score = 0;
+  const interval = chord.tonic ? Tonal.Interval.distance(chord.tonic, note) : '';
+
+  if (note === chord.tonic) score += 1;
+  if (chordNotes[1] === note) score += 0.95;
+  if (chordNotes[2] === note) score += 0.72;
+  if (chordNotes[3] === note) score += 0.86;
+  if (!chordNotes.includes(note)) score += extensionScore(interval, chord.symbol || chord.name || '');
+
+  if (keySummary?.scale?.includes(note)) score += 0.35;
+
+  if (nextChord?.notes?.length) {
+    const closest = nearestSemitoneDistance(note, nextChord.notes);
+    score += Math.max(0.45 - closest * 0.11, 0);
+
+    if (isDominant(chord.symbol) && (nextChord.symbol || '').match(/maj|min|m/i)) {
+      const resolved = pickClosestResolution(note, nextChord.notes);
+      if (nearestSemitoneDistance(note, [resolved]) <= 1) score += 0.2;
+    }
+  }
+
+  return score;
+}
+
+function extensionScore(interval, symbol) {
+  const dominant = /7/.test(symbol) && !/maj7/.test(symbol);
+  if (['2M', '9M'].includes(interval)) return 0.58;
+  if (['4P', '11P'].includes(interval)) return dominant ? 0.55 : 0.3;
+  if (['6M', '13M'].includes(interval)) return 0.52;
+  if (['2m', '9m', '5A', '6m'].includes(interval)) return dominant ? 0.48 : 0.12;
+  return 0.1;
+}
+
+function nearestSemitoneDistance(note, targetNotes) {
+  const source = Tonal.Note.chroma(note);
+  if (source === null || source === undefined) return 12;
+
+  return Math.min(
+    ...targetNotes
+      .map((target) => Tonal.Note.chroma(target))
+      .filter((value) => value !== null && value !== undefined)
+      .map((targetChroma) => {
+        const diff = Math.abs(source - targetChroma);
+        return Math.min(diff, 12 - diff);
+      })
+  );
+}
+
+function pickClosestResolution(note, targetNotes = []) {
+  if (!targetNotes.length) return note;
+  let best = targetNotes[0];
+  let bestDistance = nearestSemitoneDistance(note, [best]);
+
+  targetNotes.forEach((target) => {
+    const distance = nearestSemitoneDistance(note, [target]);
+    if (distance < bestDistance) {
+      best = target;
+      bestDistance = distance;
+    }
+  });
+
+  return best;
+}
+
+function buildNoteReason(note, chord, nextChord, keySummary) {
+  const reasons = [];
+  if ((chord.notes || []).includes(note)) reasons.push('strong chord tone');
+  if (keySummary?.scale?.includes(note)) reasons.push(`inside ${keySummary.label}`);
+  if (nextChord?.notes?.length && nearestSemitoneDistance(note, nextChord.notes) <= 1) {
+    reasons.push(`resolves by step into ${nextChord.symbol}`);
+  }
+  if (!reasons.length) reasons.push('color tension with directional pull');
+  return reasons.join(', ');
+}
+
+function summarizeCadences(progression, keySummary) {
+  if (!keySummary) return 'No stable key center found, so cadence analysis is interval-driven.';
+
+  const labels = progression.map((chord) => romanForChord(chord, keySummary.scale, keySummary.root));
+  const moves = [];
+
+  labels.forEach((label, idx) => {
+    const next = labels[idx + 1];
+    if (!next) return;
+    if (/ii/i.test(label) && /V/.test(next)) moves.push('ii→V motion detected');
+    if (/V/.test(label) && /^I/.test(next)) moves.push('authentic V→I cadence');
+    if (/IV/.test(label) && /V/.test(next)) moves.push('pre-dominant IV→V setup');
+  });
+
+  return moves.length
+    ? `Cadence intelligence: ${[...new Set(moves)].join(' · ')}.`
+    : 'Cadence intelligence: mostly linear/modal movement with no strong classical cadence.';
+}
+
+function getExtensionPool(chord, keySummary) {
+  const targetScale = getChordScaleOptions(chord)[0];
+  const scaleNotes = targetScale ? Tonal.Scale.get(targetScale.name).notes : keySummary?.scale || [];
+  return scaleNotes.filter((note) => !(chord.notes || []).includes(note));
+}
+
+function isDominant(symbol = '') {
+  return /7/.test(symbol) && !/maj7|m7b5|ø/.test(symbol);
 }
 
 function getChordScaleOptions(chord) {
