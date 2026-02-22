@@ -33,6 +33,14 @@ textarea {
   font-size: 1rem;
 }
 
+select {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.7rem;
+  font-size: 1rem;
+  background: #fff;
+}
+
 button {
   padding: 0.55rem 0.95rem;
   border-radius: 8px;
@@ -65,6 +73,28 @@ section {
   align-items: center;
   gap: 1rem;
   flex-wrap: wrap;
+}
+
+.chord-builder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.selected-chords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.chord-chip {
+  background: #eef2ff;
+  color: #1e3a8a;
+  border: 1px solid #c7d2fe;
+}
+
+.chord-chip:hover {
+  filter: brightness(0.97);
 }
 
 .inline-option {
@@ -113,6 +143,39 @@ section {
   border-radius: 10px;
   padding: 0.4rem;
   background: #fdfefe;
+}
+
+.note-legend {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.note-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.swatch {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.swatch.tonic {
+  background: #ef4444;
+}
+
+.swatch.chord {
+  background: #3b82f6;
+}
+
+.swatch.next {
+  background: #22c55e;
 }
 
 .fretboard-container svg {
