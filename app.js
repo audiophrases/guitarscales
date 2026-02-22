@@ -187,15 +187,46 @@ async function populateMidiOutputs() {
 
   try {
     audioState.midiAccess = await navigator.requestMIDIAccess();
-    const outputs = [...audioState.midiAccess.outputs.values()];
-    outputs.forEach((output) => {
-      const option = document.createElement('option');
-      option.value = output.id;
-      option.textContent = output.name || `MIDI Output ${output.id}`;
-      midiOutputSelect.appendChild(option);
-    });
+    rebuildMidiOutputSelectOptions();
+    audioState.midiAccess.onstatechange = handleMidiStateChange;
   } catch (error) {
     console.warn('MIDI unavailable:', error);
+  }
+}
+
+function rebuildMidiOutputSelectOptions() {
+  if (!midiOutputSelect) return;
+
+  const previousSelected = audioState.selectedOutput || midiOutputSelect.value || 'synth';
+  const outputs = audioState.midiAccess ? [...audioState.midiAccess.outputs.values()] : [];
+  const availableIds = new Set(outputs.map((output) => output.id));
+  const retainedSelection =
+    previousSelected !== 'synth' && availableIds.has(previousSelected) ? previousSelected : 'synth';
+
+  midiOutputSelect.innerHTML = '';
+
+  const synthOption = document.createElement('option');
+  synthOption.value = 'synth';
+  synthOption.textContent = 'Web Audio synth';
+  midiOutputSelect.appendChild(synthOption);
+
+  outputs.forEach((output) => {
+    const option = document.createElement('option');
+    option.value = output.id;
+    option.textContent = output.name || `MIDI Output ${output.id}`;
+    midiOutputSelect.appendChild(option);
+  });
+
+  audioState.selectedOutput = retainedSelection;
+  midiOutputSelect.value = retainedSelection;
+}
+
+function handleMidiStateChange() {
+  const previousSelected = audioState.selectedOutput;
+  rebuildMidiOutputSelectOptions();
+
+  if (previousSelected !== 'synth' && audioState.selectedOutput === 'synth') {
+    setRuntimeStatus('Selected MIDI output became unavailable. Falling back to Web Audio synth.');
   }
 }
 
@@ -256,16 +287,11 @@ function extractFretboardLocation(target) {
   const nodes = [target, target?.closest?.('g'), target?.closest?.('[data-string],[data-fret],[aria-label]')].filter(Boolean);
 
   for (const node of nodes) {
-    const stringValue =
-      node?.dataset?.string ||
-      node?.getAttribute?.('data-string') ||
-      node?.getAttribute?.('string') ||
-      matchIndex(node?.getAttribute?.('aria-label'), /string\s*(\d+)/i);
-    const fretValue =
-      node?.dataset?.fret ||
-      node?.getAttribute?.('data-fret') ||
-      node?.getAttribute?.('fret') ||
-      matchIndex(node?.getAttribute?.('aria-label'), /fret\s*(\d+)/i);
+    const explicit = parseStringAndFretFromNode(node);
+    if (explicit) return explicit;
+
+    const stringValue = matchIndex(node?.getAttribute?.('aria-label'), /string\s*(\d+)/i);
+    const fretValue = matchIndex(node?.getAttribute?.('aria-label'), /fret\s*(\d+)/i);
 
     if (stringValue || fretValue) {
       return {
@@ -347,7 +373,14 @@ async function playNote(note, duration = 0.7, offset = 0, forcedMidi = null) {
 
 function getSelectedMidiOutput() {
   if (audioState.selectedOutput === 'synth' || !audioState.midiAccess) return null;
-  return audioState.midiAccess.outputs.get(audioState.selectedOutput) || null;
+
+  const output = audioState.midiAccess.outputs.get(audioState.selectedOutput);
+  if (output) return output;
+
+  audioState.selectedOutput = 'synth';
+  if (midiOutputSelect) midiOutputSelect.value = 'synth';
+  setRuntimeStatus('Selected MIDI output is no longer available. Falling back to Web Audio synth.');
+  return null;
 }
 
 function playMidiNote(output, note, duration = 0.7, offset = 0, forcedMidi = null) {
@@ -842,9 +875,60 @@ function attachFretboardNoteMetadata() {
     if (!noteMatch) return;
 
     const note = noteMatch[1];
+    const location = inferFretboardLocation(group);
+
     group.setAttribute('data-note', note);
-    group.querySelectorAll('*').forEach((node) => node.setAttribute('data-note', note));
+    if (location) {
+      group.setAttribute('data-string', String(location.string));
+      group.setAttribute('data-fret', String(location.fret));
+    }
+
+    group.querySelectorAll('*').forEach((node) => {
+      node.setAttribute('data-note', note);
+      if (!location) return;
+      node.setAttribute('data-string', String(location.string));
+      node.setAttribute('data-fret', String(location.fret));
+    });
   });
+}
+
+function inferFretboardLocation(node) {
+  if (!node) return null;
+
+  const fromAttribute = parseStringAndFretFromNode(node);
+  if (fromAttribute) return fromAttribute;
+
+  const descendants = node.querySelectorAll?.('*') || [];
+  for (const child of descendants) {
+    const childLocation = parseStringAndFretFromNode(child);
+    if (childLocation) return childLocation;
+  }
+
+  return null;
+}
+
+function parseStringAndFretFromNode(node) {
+  if (!node) return null;
+
+  const stringValue =
+    node?.dataset?.string ||
+    node?.getAttribute?.('data-string') ||
+    node?.getAttribute?.('string') ||
+    matchIndex(node?.getAttribute?.('aria-label'), /string\s*(\d+)/i) ||
+    matchIndex(node?.getAttribute?.('class'), /(?:^|\s)s(?:tring)?[-_]?([1-6])(?:\s|$)/i);
+  const fretValue =
+    node?.dataset?.fret ||
+    node?.getAttribute?.('data-fret') ||
+    node?.getAttribute?.('fret') ||
+    matchIndex(node?.getAttribute?.('aria-label'), /fret\s*(\d+)/i) ||
+    matchIndex(node?.getAttribute?.('class'), /(?:^|\s)f(?:ret)?[-_]?(\d{1,2})(?:\s|$)/i);
+
+  if (!stringValue || !fretValue) return null;
+
+  return {
+    string: Number(stringValue),
+    fret: Number(fretValue)
+  };
 }
 
 function normalizeNoteName(value = '') {
