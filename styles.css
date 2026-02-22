@@ -191,3 +191,13 @@ section {
 .note-block strong {
   color: #0b3aa2;
 }
+
+.chord-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.chord-remove {
+  padding: 0.28rem 0.5rem;
+}
