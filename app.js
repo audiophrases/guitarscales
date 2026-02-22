@@ -44,6 +44,8 @@ const chordQualitySelect = document.getElementById('chord-quality');
 const addChordButton = document.getElementById('add-chord');
 const selectedChords = document.getElementById('selected-chords');
 const noteLabelCheckbox = document.getElementById('show-note-labels');
+const audioEnableButton = document.getElementById('audio-enable');
+const midiOutputSelect = document.getElementById('midi-output-select');
 const runtimeStatus = document.getElementById('runtime-status');
 const wholeOutput = document.getElementById('whole-song');
 const perOutput = document.getElementById('per-chord');
@@ -51,6 +53,12 @@ const geniusOutput = document.getElementById('genius-guide');
 const sharedFretboard = document.getElementById('shared-fretboard');
 const fretboardCaption = document.getElementById('fretboard-caption');
 const chordProgressionTokens = [];
+const audioState = {
+  context: null,
+  masterGain: null,
+  midiAccess: null,
+  selectedOutput: 'synth'
+};
 
 const chordRoots = ['C', 'C#', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const chordQualities = ['maj7', 'm7', '7', 'm', 'maj', 'm7b5', 'dim', 'sus4', '6', '9'];
@@ -64,9 +72,11 @@ function initializeApp() {
   }
 
   setupChordBuilder();
+  setupAudioControls();
   setRuntimeStatus('');
   addChordButton.addEventListener('click', addSelectedChord);
   noteLabelCheckbox.addEventListener('change', analyzeChords);
+  sharedFretboard.addEventListener('click', onFretboardClick);
 
   if (!getFretboardApi()) {
     fretboardCaption.textContent =
@@ -123,14 +133,154 @@ function renderSelectedChords() {
   }
 
   chordProgressionTokens.forEach((token, index) => {
+    const row = document.createElement('div');
+    row.className = 'chord-token';
+
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'chord-chip';
     chip.textContent = `${index + 1}. ${token}`;
-    chip.title = 'Click to remove this chord';
-    chip.addEventListener('click', () => removeChord(index));
-    selectedChords.appendChild(chip);
+    chip.title = 'Click to play this chord';
+    chip.addEventListener('click', () => {
+      const chord = Tonal.Chord.get(token);
+      if (!chord.empty) playChordNotes(chord.notes);
+    });
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'ghost chord-remove';
+    remove.textContent = '✕';
+    remove.title = 'Remove this chord';
+    remove.setAttribute('aria-label', `Remove chord ${token}`);
+    remove.addEventListener('click', () => removeChord(index));
+
+    row.appendChild(chip);
+    row.appendChild(remove);
+    selectedChords.appendChild(row);
   });
+}
+
+function setupAudioControls() {
+  audioEnableButton?.addEventListener('click', async () => {
+    await ensureAudioReady();
+    if (audioState.context?.state === 'suspended') await audioState.context.resume();
+    setRuntimeStatus('Audio ready. Click a chord or fretboard note to hear it.');
+  });
+
+  midiOutputSelect?.addEventListener('change', () => {
+    audioState.selectedOutput = midiOutputSelect.value;
+    const label = audioState.selectedOutput === 'synth' ? 'Web Audio synth' : `MIDI: ${audioState.selectedOutput}`;
+    setRuntimeStatus(`Playback output set to ${label}.`);
+  });
+
+  populateMidiOutputs();
+}
+
+async function populateMidiOutputs() {
+  if (!navigator.requestMIDIAccess || !midiOutputSelect) return;
+
+  try {
+    audioState.midiAccess = await navigator.requestMIDIAccess();
+    const outputs = [...audioState.midiAccess.outputs.values()];
+    outputs.forEach((output) => {
+      const option = document.createElement('option');
+      option.value = output.id;
+      option.textContent = output.name || `MIDI Output ${output.id}`;
+      midiOutputSelect.appendChild(option);
+    });
+  } catch (error) {
+    console.warn('MIDI unavailable:', error);
+  }
+}
+
+async function ensureAudioReady() {
+  if (audioState.context) return;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) {
+    setRuntimeStatus('Audio playback is not supported by this browser.');
+    return;
+  }
+
+  audioState.context = new AudioCtx();
+  audioState.masterGain = audioState.context.createGain();
+  audioState.masterGain.gain.value = 0.2;
+  audioState.masterGain.connect(audioState.context.destination);
+}
+
+function onFretboardClick(event) {
+  const note = extractNoteFromFretboardTarget(event.target);
+  if (!note) return;
+  playNote(note, 0.6);
+}
+
+function extractNoteFromFretboardTarget(target) {
+  if (!target) return null;
+  const noteRegex = /([A-G](?:#|b)?)/;
+
+  const candidates = [
+    target?.dataset?.note,
+    target.getAttribute?.('data-note'),
+    target.getAttribute?.('aria-label'),
+    target.textContent,
+    target.parentElement?.querySelector?.('text')?.textContent,
+    target.closest?.('g')?.querySelector?.('text')?.textContent
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const match = String(candidate).match(noteRegex);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+async function playChordNotes(notes = []) {
+  await ensureAudioReady();
+  notes.forEach((note, index) => playNote(note, 0.85, index * 0.04));
+}
+
+async function playNote(note, duration = 0.7, offset = 0) {
+  await ensureAudioReady();
+  if (!audioState.context || !note) return;
+
+  const output = getSelectedMidiOutput();
+  if (output) {
+    playMidiNote(output, note, duration, offset);
+    return;
+  }
+
+  const frequency = Tonal.Note.freq(`${note}4`) || Tonal.Note.freq(note);
+  if (!frequency) return;
+
+  const now = audioState.context.currentTime + offset;
+  const osc = audioState.context.createOscillator();
+  const gain = audioState.context.createGain();
+
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(frequency, now);
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.35, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+  osc.connect(gain);
+  gain.connect(audioState.masterGain);
+  osc.start(now);
+  osc.stop(now + duration + 0.03);
+}
+
+function getSelectedMidiOutput() {
+  if (audioState.selectedOutput === 'synth' || !audioState.midiAccess) return null;
+  return audioState.midiAccess.outputs.get(audioState.selectedOutput) || null;
+}
+
+function playMidiNote(output, note, duration = 0.7, offset = 0) {
+  const midi = Tonal.Note.midi(`${note}4`) || Tonal.Note.midi(note);
+  if (midi === null || midi === undefined) return;
+
+  const nowMs = window.performance.now() + offset * 1000;
+  output.send([0x90, midi, 110], nowMs);
+  output.send([0x80, midi, 0], nowMs + duration * 1000);
 }
 
 function setRuntimeStatus(message) {
