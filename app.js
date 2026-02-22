@@ -61,7 +61,7 @@ const audioState = {
 };
 
 const chordRoots = ['C', 'C#', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
-const chordQualities = ['maj7', 'm7', '7', 'm', 'maj', 'm7b5', 'dim', 'sus4', '6', '9'];
+const chordQualities = ['maj7', 'm7', '7', 'm', 'm7b5', 'dim', 'sus4', '6', '9'];
 
 initializeApp();
 
@@ -94,6 +94,11 @@ function setupChordBuilder() {
     chordRootSelect.appendChild(option);
   });
 
+  const majorOption = document.createElement('option');
+  majorOption.value = '';
+  majorOption.textContent = 'major (default)';
+  chordQualitySelect.appendChild(majorOption);
+
   chordQualities.forEach((quality) => {
     const option = document.createElement('option');
     option.value = quality;
@@ -106,7 +111,8 @@ function setupChordBuilder() {
 }
 
 function addSelectedChord() {
-  const chord = `${chordRootSelect.value}${chordQualitySelect.value}`;
+  const quality = chordQualitySelect.value || '';
+  const chord = `${chordRootSelect.value}${quality}`;
   const parsed = Tonal.Chord.get(chord);
   if (parsed.empty) {
     setRuntimeStatus('That chord quality/root pairing is not recognized.');
@@ -208,9 +214,9 @@ async function ensureAudioReady() {
 }
 
 function onFretboardClick(event) {
-  const note = extractNoteFromFretboardTarget(event.target);
-  if (!note) return;
-  playNote(note, 0.6);
+  const noteData = extractNoteFromFretboardTarget(event.target);
+  if (!noteData?.note) return;
+  playNote(noteData.note, 0.6, 0, noteData.midi);
 }
 
 function extractNoteFromFretboardTarget(target) {
@@ -223,15 +229,85 @@ function extractNoteFromFretboardTarget(target) {
     target.getAttribute?.('aria-label'),
     target.textContent,
     target.parentElement?.querySelector?.('text')?.textContent,
-    target.closest?.('g')?.querySelector?.('text')?.textContent
+    target.closest?.('g')?.querySelector?.('text')?.textContent,
+    target.closest?.('g')?.getAttribute?.('aria-label'),
+    target.closest?.('[aria-label]')?.getAttribute?.('aria-label')
   ].filter(Boolean);
 
+  let note = null;
   for (const candidate of candidates) {
     const match = String(candidate).match(noteRegex);
-    if (match) return match[1];
+    if (match) {
+      note = match[1];
+      break;
+    }
+  }
+
+  if (!note) return null;
+
+  const location = extractFretboardLocation(target);
+  return {
+    note,
+    midi: resolveMidiForFretboardNote(note, location)
+  };
+}
+
+function extractFretboardLocation(target) {
+  const nodes = [target, target?.closest?.('g'), target?.closest?.('[data-string],[data-fret],[aria-label]')].filter(Boolean);
+
+  for (const node of nodes) {
+    const stringValue =
+      node?.dataset?.string ||
+      node?.getAttribute?.('data-string') ||
+      node?.getAttribute?.('string') ||
+      matchIndex(node?.getAttribute?.('aria-label'), /string\s*(\d+)/i);
+    const fretValue =
+      node?.dataset?.fret ||
+      node?.getAttribute?.('data-fret') ||
+      node?.getAttribute?.('fret') ||
+      matchIndex(node?.getAttribute?.('aria-label'), /fret\s*(\d+)/i);
+
+    if (stringValue || fretValue) {
+      return {
+        string: Number(stringValue),
+        fret: Number(fretValue)
+      };
+    }
   }
 
   return null;
+}
+
+function matchIndex(text, regex) {
+  if (!text) return null;
+  const found = String(text).match(regex);
+  return found?.[1] || null;
+}
+
+function resolveMidiForFretboardNote(note, location) {
+  if (!location || Number.isNaN(location.fret) || Number.isNaN(location.string)) return null;
+
+  const stringIdx = location.string - 1;
+  const fret = location.fret;
+  const pitchClass = Tonal.Note.pitchClass(note);
+  if (stringIdx < 0 || !pitchClass) return null;
+
+  const tuningMaps = [
+    ['E4', 'B3', 'G3', 'D3', 'A2', 'E2'],
+    ['E2', 'A2', 'D3', 'G3', 'B3', 'E4']
+  ];
+
+  const candidates = tuningMaps
+    .map((tuning) => {
+      const openMidi = Tonal.Note.midi(tuning[stringIdx]);
+      if (openMidi === null || openMidi === undefined) return null;
+      return openMidi + fret;
+    })
+    .filter((midi) => midi !== null);
+
+  const matching = candidates.find((midi) => Tonal.Note.pitchClass(Tonal.Note.fromMidi(midi)) === pitchClass);
+  return matching ?? candidates[0] ?? null;
+
 }
 
 async function playChordNotes(notes = []) {
@@ -239,17 +315,17 @@ async function playChordNotes(notes = []) {
   notes.forEach((note, index) => playNote(note, 0.85, index * 0.04));
 }
 
-async function playNote(note, duration = 0.7, offset = 0) {
+async function playNote(note, duration = 0.7, offset = 0, forcedMidi = null) {
   await ensureAudioReady();
   if (!audioState.context || !note) return;
 
   const output = getSelectedMidiOutput();
   if (output) {
-    playMidiNote(output, note, duration, offset);
+    playMidiNote(output, note, duration, offset, forcedMidi);
     return;
   }
 
-  const frequency = Tonal.Note.freq(`${note}4`) || Tonal.Note.freq(note);
+  const frequency = forcedMidi !== null ? Tonal.Note.freq(Tonal.Note.fromMidi(forcedMidi)) : Tonal.Note.freq(`${note}4`) || Tonal.Note.freq(note);
   if (!frequency) return;
 
   const now = audioState.context.currentTime + offset;
@@ -274,8 +350,8 @@ function getSelectedMidiOutput() {
   return audioState.midiAccess.outputs.get(audioState.selectedOutput) || null;
 }
 
-function playMidiNote(output, note, duration = 0.7, offset = 0) {
-  const midi = Tonal.Note.midi(`${note}4`) || Tonal.Note.midi(note);
+function playMidiNote(output, note, duration = 0.7, offset = 0, forcedMidi = null) {
+  const midi = forcedMidi ?? Tonal.Note.midi(`${note}4`) ?? Tonal.Note.midi(note);
   if (midi === null || midi === undefined) return;
 
   const nowMs = window.performance.now() + offset * 1000;
@@ -725,26 +801,38 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
   });
 
   board.renderScale({ root, type });
+  const tonicPitchClass = Tonal.Note.pitchClass(root) || root;
 
   board
     .style({
-      filter: ({ interval }) => interval === '1P',
-      fill: '#ef4444',
+      filter: () => true,
+      fill: '#e2e8f0',
       text: ({ note }) => note
     })
     .style({
-      filter: ({ note }) => chord?.notes?.includes(note),
+      filter: ({ note }) => chord?.notes?.some((chordNote) => isSamePitchClass(chordNote, note)),
       fill: '#3b82f6',
       text: ({ note }) => note
     })
     .style({
-      filter: ({ note }) => nextChordNotes.includes(note),
+      filter: ({ note }) => nextChordNotes.some((nextNote) => isSamePitchClass(nextNote, note)),
       fill: '#22c55e',
+      text: ({ note }) => note
+    })
+    .style({
+      filter: ({ note }) => isSamePitchClass(note, tonicPitchClass),
+      fill: '#ef4444',
       text: ({ note }) => note
     })
     .render();
 
   fretboardCaption.textContent = captionText;
+}
+
+function isSamePitchClass(a, b) {
+  const left = Tonal.Note.pitchClass(a);
+  const right = Tonal.Note.pitchClass(b);
+  return left && right && left === right;
 }
 
 function getPossibleRoots(progression) {
