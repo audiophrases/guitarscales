@@ -749,8 +749,6 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
   const tuning = ['E4', 'B3', 'G3', 'D3', 'A2', 'E2'];
   const fretCount = 15;
   const scaleNotes = Tonal.Scale.get(`${root} ${type}`).notes || [];
-  const chordNotes = chord?.notes || [];
-  const nextNotes = nextChordNotes || [];
 
   sharedFretboard.innerHTML = '';
   audioState.noteMap = new Map();
@@ -796,14 +794,9 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
       noteButton.dataset.fret = String(fret);
 
       const inScale = scaleNotes.some((scaleNote) => isSamePitchClass(scaleNote, note));
-      const inChord = chordNotes.some((chordNote) => isSamePitchClass(chordNote, note));
-      const inNextChord = nextNotes.some((nextNote) => isSamePitchClass(nextNote, note));
       if (inScale) {
-        noteButton.classList.add('is-active');
         noteButton.textContent = noteLabel;
       }
-      if (inChord) noteButton.classList.add('is-chord-tone');
-      if (inNextChord) noteButton.classList.add('is-next-tone');
 
       noteButton.addEventListener('click', () => playNote(note, 0.6, 0, midi));
       row.appendChild(noteButton);
