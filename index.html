@@ -28,11 +28,6 @@
 
       <section id="fretboard-lab">
         <p id="fretboard-caption">Select or add chords to instantly update the fretboard map.</p>
-        <div class="note-legend" id="note-legend">
-          <span><i class="swatch tonic"></i>Tonic</span>
-          <span><i class="swatch chord"></i>Active chord tones</span>
-          <span><i class="swatch next"></i>Next-chord targets</span>
-        </div>
         <div class="fretboard-container" id="shared-fretboard"></div>
       </section>
 
@@ -56,22 +51,11 @@
         if (runtimeStatus) {
           runtimeStatus.textContent = `${name} failed to load. Some features are unavailable.`;
         }
-
-        if (name.toLowerCase().includes('fretboard')) {
-          const fretboardCaption = document.getElementById('fretboard-caption');
-          if (fretboardCaption) {
-            fretboardCaption.textContent = 'Fretboard visualization is unavailable because a script failed to load.';
-          }
-        }
       };
     </script>
     <script
       src="https://cdn.jsdelivr.net/npm/@tonaljs/tonal/browser/tonal.min.js"
       onerror="window.reportDependencyError('Tonal', this.src)"
-    ></script>
-    <script
-      src="https://unpkg.com/@moonwave99/fretboard.js/dist/fretboard.umd.js"
-      onerror="window.reportDependencyError('Fretboard library', this.src)"
     ></script>
     <script src="app.js"></script>
   </body>
