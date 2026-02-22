@@ -43,7 +43,6 @@ const chordRootSelect = document.getElementById('chord-root');
 const chordQualitySelect = document.getElementById('chord-quality');
 const addChordButton = document.getElementById('add-chord');
 const selectedChords = document.getElementById('selected-chords');
-const midiOutputSelect = document.getElementById('midi-output-select');
 const runtimeStatus = document.getElementById('runtime-status');
 const wholeOutput = document.getElementById('whole-song');
 const perOutput = document.getElementById('per-chord');
@@ -59,7 +58,7 @@ const audioState = {
   noteMap: new Map()
 };
 
-const chordRoots = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const chordRoots = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const chordQualities = ['m', '7', 'm7', 'maj7', 'sus4', '6', '9', 'm7b5', 'dim'];
 
 initializeApp();
@@ -71,7 +70,6 @@ function initializeApp() {
   }
 
   setupChordBuilder();
-  setupAudioControls();
   setRuntimeStatus('');
   addChordButton.addEventListener('click', addSelectedChord);
 
@@ -156,64 +154,6 @@ function renderSelectedChords() {
     row.appendChild(remove);
     selectedChords.appendChild(row);
   });
-}
-
-function setupAudioControls() {
-  midiOutputSelect?.addEventListener('change', () => {
-    audioState.selectedOutput = midiOutputSelect.value;
-    const label = audioState.selectedOutput === 'synth' ? 'Built-in output' : `MIDI: ${audioState.selectedOutput}`;
-    setRuntimeStatus(`Playback output set to ${label}.`);
-  });
-
-  populateMidiOutputs();
-}
-
-async function populateMidiOutputs() {
-  if (!navigator.requestMIDIAccess || !midiOutputSelect) return;
-
-  try {
-    audioState.midiAccess = await navigator.requestMIDIAccess();
-    rebuildMidiOutputSelectOptions();
-    audioState.midiAccess.onstatechange = handleMidiStateChange;
-  } catch (error) {
-    console.warn('MIDI unavailable:', error);
-  }
-}
-
-function rebuildMidiOutputSelectOptions() {
-  if (!midiOutputSelect) return;
-
-  const previousSelected = audioState.selectedOutput || midiOutputSelect.value || 'synth';
-  const outputs = audioState.midiAccess ? [...audioState.midiAccess.outputs.values()] : [];
-  const availableIds = new Set(outputs.map((output) => output.id));
-  const retainedSelection =
-    previousSelected !== 'synth' && availableIds.has(previousSelected) ? previousSelected : 'synth';
-
-  midiOutputSelect.innerHTML = '';
-
-  const synthOption = document.createElement('option');
-  synthOption.value = 'synth';
-  synthOption.textContent = 'Built-in output';
-  midiOutputSelect.appendChild(synthOption);
-
-  outputs.forEach((output) => {
-    const option = document.createElement('option');
-    option.value = output.id;
-    option.textContent = output.name || `MIDI Output ${output.id}`;
-    midiOutputSelect.appendChild(option);
-  });
-
-  audioState.selectedOutput = retainedSelection;
-  midiOutputSelect.value = retainedSelection;
-}
-
-function handleMidiStateChange() {
-  const previousSelected = audioState.selectedOutput;
-  rebuildMidiOutputSelectOptions();
-
-  if (previousSelected !== 'synth' && audioState.selectedOutput === 'synth') {
-    setRuntimeStatus('Selected MIDI output became unavailable. Falling back to built-in output.');
-  }
 }
 
 async function ensureAudioReady() {
@@ -371,14 +311,6 @@ async function playNote(note, duration = 0.7, offset = 0, forcedMidi = null) {
 }
 
 function getSelectedMidiOutput() {
-  if (audioState.selectedOutput === 'synth' || !audioState.midiAccess) return null;
-
-  const output = audioState.midiAccess.outputs.get(audioState.selectedOutput);
-  if (output) return output;
-
-  audioState.selectedOutput = 'synth';
-  if (midiOutputSelect) midiOutputSelect.value = 'synth';
-  setRuntimeStatus('Selected MIDI output is no longer available. Falling back to built-in output.');
   return null;
 }
 
@@ -494,12 +426,12 @@ function renderWholeSongInsights(progression, keyCandidates) {
     block.className = 'scale-block';
 
     const h4 = document.createElement('h4');
-    h4.textContent = `${index + 1}. ${keyCandidate.label.toUpperCase()} · confidence ${(keyCandidate.score * 100).toFixed(0)}%`;
+    h4.textContent = `${index + 1}. ${formatScaleName(keyCandidate.label).toUpperCase()} · confidence ${(keyCandidate.score * 100).toFixed(0)}%`;
     block.appendChild(h4);
 
     const p = document.createElement('p');
     p.className = 'scale-meta';
-    p.textContent = `Scale notes: ${keyCandidate.scale.join(' · ')}`;
+    p.textContent = `Scale notes: ${keyCandidate.scale.map(formatNoteName).join(' · ')}`;
     block.appendChild(p);
 
     const p2 = document.createElement('p');
@@ -508,7 +440,7 @@ function renderWholeSongInsights(progression, keyCandidates) {
     block.appendChild(p2);
 
     const functionMap = progression
-      .map((chord) => `${chord.symbol}: ${romanForChord(chord, keyCandidate.scale, keyCandidate.root)}`)
+      .map((chord) => `${formatScaleName(chord.symbol)}: ${romanForChord(chord, keyCandidate.scale, keyCandidate.root)}`)
       .join(' | ');
     const p3 = document.createElement('p');
     p3.className = 'summary-note';
@@ -524,9 +456,9 @@ function renderWholeSongInsights(progression, keyCandidates) {
 
       const btn = document.createElement('button');
       btn.className = 'ghost';
-      btn.textContent = `Show ${scale.name}`;
+      btn.textContent = `Show ${formatScaleName(scale.name)}`;
       btn.addEventListener('click', () => {
-        renderSharedFretboard(scale.root, scale.type, progression[0], `${scale.name}: ${scale.reason}`);
+        renderSharedFretboard(scale.root, scale.type, progression[0], `${formatScaleName(scale.name)}: ${scale.reason}`);
       });
       block.appendChild(btn);
     });
@@ -545,7 +477,7 @@ function suggestGlobalScales(keyCandidate) {
     .map((type) => ({
       root: keyCandidate.root,
       type,
-      name: `${keyCandidate.root} ${type}`,
+      name: formatScaleName(`${keyCandidate.root} ${type}`),
       reason: scaleFlavors[type] || 'Useful harmonic color.'
     }))
     .filter((candidate) => !Tonal.Scale.get(candidate.name).empty);
@@ -557,7 +489,7 @@ function renderPerChordInsights(progression, primaryKey) {
     block.className = 'scale-block';
 
     const h4 = document.createElement('h4');
-    h4.textContent = `Chord ${index + 1}: ${chord.symbol}`;
+    h4.textContent = `Chord ${index + 1}: ${formatScaleName(chord.symbol)}`;
     block.appendChild(h4);
 
     const fn = document.createElement('p');
@@ -581,9 +513,9 @@ function renderPerChordInsights(progression, primaryKey) {
     fittingScales.forEach((scale) => {
       const btn = document.createElement('button');
       btn.className = 'ghost';
-      btn.textContent = `Show ${scale.name}`;
+      btn.textContent = `Show ${formatScaleName(scale.name)}`;
       btn.addEventListener('click', () => {
-        renderSharedFretboard(scale.root, scale.type, chord, `${chord.symbol} target: ${scale.reason}`);
+        renderSharedFretboard(scale.root, scale.type, chord, `${formatScaleName(chord.symbol)} target: ${scale.reason}`);
       });
       block.appendChild(btn);
 
@@ -616,21 +548,21 @@ function renderGeniusNavigator(progression, keySummary) {
     block.className = 'scale-block note-block';
 
     const header = document.createElement('h4');
-    header.textContent = `${index + 1}. ${entry.chord} → ${entry.nextChord || 'end'}`;
+    header.textContent = `${index + 1}. ${formatScaleName(entry.chord)} → ${entry.nextChord ? formatScaleName(entry.nextChord) : 'end'}`;
     block.appendChild(header);
 
     const best = document.createElement('p');
-    best.innerHTML = `<strong>Best note:</strong> ${entry.bestNote} <span class="summary-note">(${entry.reason})</span>`;
+    best.innerHTML = `<strong>Best note:</strong> ${formatNoteName(entry.bestNote)} <span class="summary-note">(${entry.reason})</span>`;
     block.appendChild(best);
 
     const alt = document.createElement('p');
     alt.className = 'summary-note';
-    alt.textContent = `Alternatives: ${entry.alternatives.join(' · ')}`;
+    alt.textContent = `Alternatives: ${entry.alternatives.map(formatNoteName).join(' · ')}`;
     block.appendChild(alt);
 
     const microLine = document.createElement('p');
     microLine.className = 'summary-note';
-    microLine.textContent = `Micro-line: ${entry.microLine.join(' → ')}`;
+    microLine.textContent = `Micro-line: ${entry.microLine.map(formatNoteName).join(' → ')}`;
     block.appendChild(microLine);
 
     geniusOutput.appendChild(block);
@@ -732,7 +664,7 @@ function pickClosestResolution(note, targetNotes = []) {
 function buildNoteReason(note, chord, nextChord, keySummary) {
   const reasons = [];
   if ((chord.notes || []).includes(note)) reasons.push('strong chord tone');
-  if (keySummary?.scale?.includes(note)) reasons.push(`inside ${keySummary.label}`);
+  if (keySummary?.scale?.includes(note)) reasons.push(`inside ${formatScaleName(keySummary.label)}`);
   if (nextChord?.notes?.length && nearestSemitoneDistance(note, nextChord.notes) <= 1) {
     reasons.push(`resolves by step into ${nextChord.symbol}`);
   }
@@ -845,7 +777,7 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
 
     const label = document.createElement('span');
     label.className = 'string-label';
-    label.textContent = `${openString.slice(0, -1)}${stringNumber}`;
+    label.textContent = `${formatNoteName(openString.slice(0, -1))}${stringNumber}`;
     row.appendChild(label);
 
     const openMidi = Tonal.Note.midi(openString);
@@ -853,11 +785,11 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
     for (let fret = 0; fret <= fretCount; fret += 1) {
       const midi = openMidi + fret;
       const note = Tonal.Note.pitchClass(Tonal.Note.fromMidi(midi));
+      const noteLabel = formatNoteName(note);
       const noteButton = document.createElement('button');
       noteButton.type = 'button';
       noteButton.className = 'fret-note';
-      noteButton.textContent = note;
-      noteButton.title = `Play ${note} (string ${stringNumber}, fret ${fret})`;
+      noteButton.title = `Play ${noteLabel} (string ${stringNumber}, fret ${fret})`;
       noteButton.dataset.note = note;
       noteButton.dataset.midi = String(midi);
       noteButton.dataset.string = String(stringNumber);
@@ -866,9 +798,12 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
       const inScale = scaleNotes.some((scaleNote) => isSamePitchClass(scaleNote, note));
       const inChord = chordNotes.some((chordNote) => isSamePitchClass(chordNote, note));
       const inNextChord = nextNotes.some((nextNote) => isSamePitchClass(nextNote, note));
-      if (inScale || inChord || inNextChord) {
+      if (inScale) {
         noteButton.classList.add('is-active');
+        noteButton.textContent = noteLabel;
       }
+      if (inChord) noteButton.classList.add('is-chord-tone');
+      if (inNextChord) noteButton.classList.add('is-next-tone');
 
       noteButton.addEventListener('click', () => playNote(note, 0.6, 0, midi));
       row.appendChild(noteButton);
@@ -957,6 +892,32 @@ function parseStringAndFretFromNode(node) {
   };
 }
 
+
+
+function formatScaleName(label = '') {
+  return String(label).replace(/[A-G](?:#|b)?/g, (token) => formatNoteName(token));
+}
+
+function formatNoteName(note = '') {
+  const normalized = normalizeNoteName(note);
+  const replacements = {
+    Cb: 'B',
+    Db: 'C#',
+    Eb: 'D#',
+    Fb: 'E',
+    Gb: 'F#',
+    Ab: 'G#',
+    Bb: 'A#',
+    'E#': 'F',
+    'B#': 'C'
+  };
+
+  const pitchClass = normalized.match(/[A-G](?:#|b)?/);
+  if (!pitchClass) return normalized;
+  const mapped = replacements[pitchClass[0]] || pitchClass[0];
+  return normalized.replace(pitchClass[0], mapped);
+}
+
 function normalizeNoteName(value = '') {
   return String(value)
     .replaceAll('♯', '#')
@@ -972,6 +933,6 @@ function isSamePitchClass(a, b) {
 
 function getPossibleRoots(progression) {
   const tonicSet = new Set(progression.map((chord) => chord.tonic).filter(Boolean));
-  const chromatic = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+  const chromatic = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   return [...tonicSet, ...chromatic.filter((note) => !tonicSet.has(note))];
 }

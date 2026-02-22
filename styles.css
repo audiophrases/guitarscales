@@ -139,16 +139,17 @@ section {
 .fretboard-container {
   overflow-x: auto;
   margin: 0.6rem 0 0.2rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.4rem;
-  background: #fdfefe;
+  border: 1px solid #915f2d;
+  border-radius: 12px;
+  padding: 0.65rem;
+  background: linear-gradient(180deg, #d7a15f 0%, #b87b3f 45%, #9d6532 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 
 .fretboard-grid {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.45rem;
   min-width: 760px;
 }
 
@@ -156,6 +157,8 @@ section {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  border-bottom: 2px solid rgba(49, 28, 10, 0.35);
+  padding-bottom: 0.2rem;
 }
 
 .string-label {
@@ -166,14 +169,15 @@ section {
 }
 
 .fret-note {
-  border: 1px solid #bfccdd;
-  background: #fff;
-  color: #0f172a;
-  border-radius: 6px;
+  border: 1px solid rgba(49, 28, 10, 0.35);
+  background: rgba(245, 231, 213, 0.45);
+  color: #f8fafc;
+  border-radius: 999px;
   min-width: 2.25rem;
   height: 2rem;
   padding: 0;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .fret-note:hover {
@@ -181,8 +185,17 @@ section {
 }
 
 .fret-note.is-active {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+  border-color: #ffefc8;
+  background: #1d4ed8;
+  box-shadow: 0 0 0 2px rgba(255, 239, 200, 0.24);
+}
+
+.fret-note.is-chord-tone {
+  background: #0f766e;
+}
+
+.fret-note.is-next-tone {
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35);
 }
 
 .fret-index {
