@@ -507,8 +507,29 @@ function analyzeChords() {
   );
 }
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function getScaleNotesFromSelection(scaleRef, fallbackRoot = '') {
+  if (!scaleRef) return [];
+
+  const fromName = scaleRef.name ? (Tonal.Scale.get(scaleRef.name)?.notes || []) : [];
+  if (fromName.length) return fromName;
+
+  const root = scaleRef.root || fallbackRoot;
+  const type = scaleRef.type || '';
+  if (root && type) {
+    return Tonal.Scale.get(`${root} ${type}`)?.notes || [];
+  }
+
+  return [];
+}
+
 function detectKeyCenters(progression) {
-  const allNotes = [...new Set(progression.flatMap((chord) => chord.notes))];
+  if (!progression.length) return [];
+
+  const allProgressionNotes = [...new Set(progression.flatMap((chord) => chord.notes || []))];
   const roots = getPossibleRoots(progression);
   const keyCandidates = [];
 
@@ -522,22 +543,18 @@ function detectKeyCenters(progression) {
     ].forEach(({ mode, keyObj }) => {
       if (!keyObj?.scale?.length) return;
 
-      const noteCoverage = allNotes.filter((n) => keyObj.scale.some((scaleNote) => isSamePitchClass(scaleNote, n))).length / allNotes.length;
-      const chordCoverage = progression.filter((chord) => chord.notes.every((n) => keyObj.scale.some((scaleNote) => isSamePitchClass(scaleNote, n)))).length /
-        progression.length;
-      const tonicBonus = progression[0]?.tonic === root ? 0.08 : 0;
-      const cadenceBonus = cadenceBonusForKey(progression, keyObj.scale, root);
-      const score = noteCoverage * 0.55 + chordCoverage * 0.35 + tonicBonus + cadenceBonus;
+      const fit = analyzeScaleFit(progression, keyObj.scale, root);
 
       keyCandidates.push({
         label: `${root} ${mode}`,
         root,
         mode,
-        score,
+        score: fit.fitScore,
         scale: keyObj.scale,
-        notes: allNotes,
-        chordCoverage,
-        noteCoverage
+        notes: allProgressionNotes,
+        chordCoverage: fit.chordCoverage,
+        noteCoverage: fit.noteCoverage,
+        scalePrecision: fit.scalePrecision
       });
     });
   });
@@ -559,24 +576,91 @@ function cadenceBonusForKey(progression, scaleNotes, root) {
   return Math.min(bonus, 0.09);
 }
 
-function computeScaleCoverage(progression, scaleNotes = [], root = '') {
+function analyzeScaleFit(progression, scaleNotes = [], root = '') {
   if (!progression.length || !scaleNotes.length) {
-    return { noteCoverage: 0, chordCoverage: 0, confidence: 0 };
+    return {
+      noteCoverage: 0,
+      chordCoverage: 0,
+      scalePrecision: 0,
+      tonicBonus: 0,
+      cadenceBonus: 0,
+      fitScore: 0,
+      noteCount: 0
+    };
   }
 
   const allNotes = [...new Set(progression.flatMap((chord) => chord.notes || []))];
-  const noteCoverage = allNotes.length
-    ? allNotes.filter((n) => scaleNotes.some((s) => isSamePitchClass(s, n))).length / allNotes.length
-    : 0;
+  const uniqueScaleNotes = [...new Set(scaleNotes)];
 
-  const chordCoverage = progression.length
-    ? progression.filter((chord) => (chord.notes || []).every((n) => scaleNotes.some((s) => isSamePitchClass(s, n)))).length / progression.length
-    : 0;
+  const matchedNotes = allNotes.filter((n) => scaleNotes.some((s) => isSamePitchClass(s, n))).length;
+  const noteCoverage = allNotes.length ? matchedNotes / allNotes.length : 0;
 
-  const tonicBonus = progression[0]?.tonic && root && isSamePitchClass(progression[0].tonic, root) ? 0.06 : 0;
-  const confidence = Math.min(1, noteCoverage * 0.58 + chordCoverage * 0.36 + tonicBonus);
+  const matchedChords = progression.filter((chord) => (chord.notes || []).every((n) => scaleNotes.some((s) => isSamePitchClass(s, n)))).length;
+  const chordCoverage = progression.length ? matchedChords / progression.length : 0;
 
-  return { noteCoverage, chordCoverage, confidence };
+  const matchedScaleTones = uniqueScaleNotes.filter((s) => allNotes.some((n) => isSamePitchClass(n, s))).length;
+  const scalePrecision = uniqueScaleNotes.length ? matchedScaleTones / uniqueScaleNotes.length : 0;
+
+  const tonicBonus = progression[0]?.tonic && root && isSamePitchClass(progression[0].tonic, root) ? 0.05 : 0;
+  const cadenceBonus = cadenceBonusForKey(progression, scaleNotes, root) * 0.6;
+
+  const fitScore = clamp01(
+    noteCoverage * 0.4 +
+    chordCoverage * 0.3 +
+    scalePrecision * 0.2 +
+    tonicBonus +
+    cadenceBonus
+  );
+
+  return {
+    noteCoverage,
+    chordCoverage,
+    scalePrecision,
+    tonicBonus,
+    cadenceBonus,
+    fitScore,
+    noteCount: allNotes.length
+  };
+}
+
+function computeScaleCoverage(progression, scaleNotes = [], root = '', context = {}) {
+  const fit = analyzeScaleFit(progression, scaleNotes, root);
+
+  const peerScaleScores = (context.peerScaleScores || []).filter((v) => Number.isFinite(v));
+  const sortedScaleScores = peerScaleScores.length ? [...peerScaleScores].sort((a, b) => b - a) : [fit.fitScore];
+  const bestScaleScore = sortedScaleScores[0] || fit.fitScore;
+  const secondScaleScore = sortedScaleScores[1] ?? bestScaleScore;
+  const scaleRelative = bestScaleScore > 0 ? clamp01(fit.fitScore / bestScaleScore) : 0;
+  const scaleGap = Math.max(0, bestScaleScore - secondScaleScore);
+  const scaleSeparation = clamp01(0.35 + scaleGap * 4);
+  const scaleConfidence = clamp01(scaleRelative * 0.7 + scaleSeparation * 0.3);
+
+  const keyScores = (context.keyScores || []).filter((v) => Number.isFinite(v));
+  const sortedKeyScores = keyScores.length ? [...keyScores].sort((a, b) => b - a) : [context.selectedKeyScore || fit.fitScore];
+  const bestKeyScore = sortedKeyScores[0] || (context.selectedKeyScore || fit.fitScore);
+  const secondKeyScore = sortedKeyScores[1] ?? bestKeyScore;
+  const selectedKeyScore = Number.isFinite(context.selectedKeyScore) ? context.selectedKeyScore : fit.fitScore;
+  const keyRelative = bestKeyScore > 0 ? clamp01(selectedKeyScore / bestKeyScore) : 0;
+  const keyGap = Math.max(0, bestKeyScore - secondKeyScore);
+  const keySeparation = clamp01(0.35 + keyGap * 3.5);
+  const keyConfidence = clamp01(keyRelative * 0.7 + keySeparation * 0.3);
+
+  const dataReliability = clamp01(0.35 + progression.length * 0.1 + fit.noteCount * 0.04);
+
+  const confidence = clamp01(
+    fit.fitScore * 0.58 +
+    scaleConfidence * 0.2 +
+    keyConfidence * 0.14 +
+    dataReliability * 0.08
+  );
+
+  return {
+    noteCoverage: fit.noteCoverage,
+    chordCoverage: fit.chordCoverage,
+    confidence,
+    scalePrecision: fit.scalePrecision,
+    fitScore: fit.fitScore
+  };
 }
 
 function renderWholeSongInsights(progression, keyCandidates) {
@@ -601,13 +685,23 @@ function renderWholeSongInsights(progression, keyCandidates) {
   const selectedScale = selectedScales.find((scale) => scale.name === appState.selectedScaleKey) || selectedScales[0] || null;
   const selectedScaleName = selectedScale ? (selectedScale.displayName || selectedScale.name) : selectedCandidate.label;
   const selectedScaleNotes = selectedScale
-    ? (Tonal.Scale.get(selectedScale.name).notes || [])
+    ? getScaleNotesFromSelection(selectedScale, selectedCandidate.root)
     : (selectedCandidate.scale || []);
+
+  const peerScaleScores = selectedScales.map((scale) => {
+    const notes = getScaleNotesFromSelection(scale, selectedCandidate.root);
+    return analyzeScaleFit(progression, notes, scale.root || selectedCandidate.root).fitScore;
+  });
 
   const { noteCoverage, chordCoverage, confidence } = computeScaleCoverage(
     progression,
     selectedScaleNotes,
-    selectedScale?.root || selectedCandidate.root
+    selectedScale?.root || selectedCandidate.root,
+    {
+      peerScaleScores,
+      keyScores: keyCandidates.map((candidate) => candidate.score),
+      selectedKeyScore: selectedCandidate.score
+    }
   );
 
   const summary = document.createElement('div');
