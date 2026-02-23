@@ -22,7 +22,7 @@ body {
 
 main {
   display: grid;
-  gap: 1rem;
+  gap: 0.55rem;
 }
 
 textarea {
@@ -85,6 +85,28 @@ section {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+  margin: 0;
+}
+
+.selected-chords .summary-note {
+  margin: 0;
+}
+
+#runtime-status:empty {
+  display: none;
+}
+
+#fretboard-lab {
+  padding-top: 0.45rem;
+}
+
+#fretboard-caption {
+  margin: 0;
+  line-height: 1.25;
+}
+
+#fretboard-lab + section {
+  margin-top: 0;
 }
 
 .chord-chip {
@@ -138,7 +160,7 @@ section {
 
 .fretboard-container {
   overflow-x: auto;
-  margin: 0.6rem 0 0.2rem;
+  margin: 0.2rem 0 0.2rem;
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 0.65rem;

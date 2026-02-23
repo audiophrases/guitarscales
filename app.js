@@ -10,11 +10,16 @@ const scaleFlavors = {
   'major pentatonic': 'Open and consonant major sound for hooks and phrases.',
   'minor pentatonic': 'Core guitar vocabulary for expressive minor lines.',
   blues: 'Minor pentatonic + blue note for grit and tension-release.',
+  'major blues': 'Major color with blues spice and expressive passing tones.',
+  'minor blues': 'Minor blues language for bends, grit and release.',
   'harmonic minor': 'Dramatic minor color with strong leading tone.',
   'melodic minor': 'Jazz-forward minor language with smooth upper structure.',
   'lydian dominant': 'Dominant sonority with #11 brightness.',
   altered: 'Maximum altered dominant tension before resolution.',
-  'phrygian dominant': 'Exotic dominant color from harmonic minor.',
+  'phrygian dominant': 'Flamenco-friendly dominant color from harmonic minor.',
+  flamenco: 'Spanish/flamenco color (same family as phrygian dominant).',
+  'double harmonic major': 'Strong Andalusian/Arabic-flavored major color.',
+  'spanish heptatonic': 'Traditional Spanish color often used in flamenco contexts.',
   'whole tone': 'Symmetrical dominant color with dreamy ambiguity.',
   'whole-half diminished': 'Symmetrical diminished palette for dominant movement.',
   'half-whole diminished': 'Classic 8-note dominant diminished sound.',
@@ -28,10 +33,12 @@ const commonScalePriority = [
   'lydian',
   'mixolydian',
   'major pentatonic',
+  'major blues',
   'major bebop',
   'dorian',
   'aeolian',
   'minor pentatonic',
+  'minor blues',
   'blues',
   'melodic minor',
   'harmonic minor',
@@ -42,6 +49,9 @@ const commonScalePriority = [
   'dominant bebop',
   'altered',
   'phrygian dominant',
+  'flamenco',
+  'double harmonic major',
+  'spanish heptatonic',
   'whole tone',
   'half-whole diminished',
   'whole-half diminished',
@@ -50,16 +60,22 @@ const commonScalePriority = [
 
 const chordScaleRules = [
   { matcher: /maj7#11|maj9#11|maj13#11/i, scales: ['lydian', 'ionian'] },
-  { matcher: /maj7|maj9|maj6|Δ/i, scales: ['ionian', 'lydian', 'major pentatonic', 'major bebop'] },
+  { matcher: /maj7|maj9|maj6|Δ/i, scales: ['ionian', 'lydian', 'major pentatonic', 'major blues', 'major bebop'] },
   { matcher: /m7b5|ø/i, scales: ['locrian', 'locrian #2'] },
   { matcher: /m6|mmaj7|m\(maj7\)/i, scales: ['melodic minor', 'dorian', 'harmonic minor'] },
-  { matcher: /m(?!aj)/i, scales: ['dorian', 'aeolian', 'minor pentatonic', 'blues', 'melodic minor', 'dorian b2'] },
+  { matcher: /m(?!aj)/i, scales: ['dorian', 'aeolian', 'minor pentatonic', 'minor blues', 'blues', 'melodic minor', 'dorian b2'] },
   { matcher: /7#11/i, scales: ['lydian dominant', 'mixolydian', 'whole tone'] },
-  { matcher: /7b9|7alt|7#9|7#5|7b13/i, scales: ['altered', 'phrygian dominant', 'half-whole diminished', 'whole tone'] },
-  { matcher: /13|9|11|7/i, scales: ['mixolydian', 'dominant bebop', 'lydian dominant', 'minor pentatonic', 'blues'] },
+  { matcher: /7b9|7alt|7#9|7#5|7b13/i, scales: ['altered', 'phrygian dominant', 'flamenco', 'double harmonic major', 'spanish heptatonic', 'half-whole diminished', 'whole tone'] },
+  { matcher: /13|9|11|7/i, scales: ['mixolydian', 'dominant bebop', 'lydian dominant', 'phrygian dominant', 'flamenco', 'minor pentatonic', 'blues'] },
   { matcher: /dim|o/i, scales: ['whole-half diminished', 'half-whole diminished'] },
   { matcher: /sus/i, scales: ['mixolydian', 'dorian', 'major pentatonic'] }
 ];
+
+const scaleTypeAliases = {
+  flamenco: ['phrygian dominant', 'spanish heptatonic', 'double harmonic major'],
+  'minor blues': ['blues'],
+  'major blues': ['major blues', 'major pentatonic']
+};
 
 const chordRootSelect = document.getElementById('chord-root');
 const chordQualitySelect = document.getElementById('chord-quality');
@@ -470,16 +486,17 @@ function renderWholeSongInsights(progression, keyCandidates) {
 
     const strongScales = suggestGlobalScales(keyCandidate);
     strongScales.forEach((scale) => {
+      const shownScaleName = scale.displayName || scale.name;
       const badge = document.createElement('span');
       badge.className = 'badge';
-      badge.textContent = `${scale.name} (${scale.reason})`;
+      badge.textContent = `${formatScaleName(shownScaleName)} (${scale.reason})`;
       block.appendChild(badge);
 
       const btn = document.createElement('button');
       btn.className = 'ghost';
-      btn.textContent = `Show ${formatScaleName(scale.name)}`;
+      btn.textContent = `Show ${formatScaleName(shownScaleName)}`;
       btn.addEventListener('click', () => {
-        renderSharedFretboard(scale.root, scale.type, progression[0], `${formatScaleName(scale.name)}: ${scale.reason}`);
+        renderSharedFretboard(scale.root, scale.type, progression[0], `${formatScaleName(shownScaleName)}: ${scale.reason}`);
       });
       block.appendChild(btn);
     });
@@ -490,18 +507,26 @@ function renderWholeSongInsights(progression, keyCandidates) {
 
 function suggestGlobalScales(keyCandidate) {
   const modeMap = {
-    major: ['ionian', 'lydian', 'major pentatonic'],
-    minor: ['aeolian', 'dorian', 'minor pentatonic', 'blues', 'harmonic minor']
+    major: ['ionian', 'lydian', 'major pentatonic', 'major blues', 'mixolydian', 'double harmonic major'],
+    minor: ['aeolian', 'dorian', 'minor pentatonic', 'minor blues', 'blues', 'harmonic minor', 'phrygian dominant', 'flamenco']
   };
 
   return (modeMap[keyCandidate.mode] || ['ionian'])
-    .map((type) => ({
-      root: keyCandidate.root,
-      type,
-      name: formatScaleName(`${keyCandidate.root} ${type}`),
-      reason: scaleFlavors[type] || 'Useful harmonic color.'
-    }))
-    .filter((candidate) => !Tonal.Scale.get(candidate.name).empty);
+    .map((requestedType) => {
+      const resolved = resolveScaleTypeForRoot(keyCandidate.root, requestedType);
+      if (!resolved) return null;
+
+      return {
+        root: keyCandidate.root,
+        type: resolved.type,
+        labelType: requestedType,
+        name: resolved.name,
+        displayName: resolved.displayName,
+        reason: scaleFlavors[requestedType] || scaleFlavors[resolved.type] || 'Useful harmonic color.'
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => scalePriority(a.labelType || a.type) - scalePriority(b.labelType || b.type));
 }
 
 function renderPerChordInsights(progression, primaryKey) {
@@ -534,9 +559,10 @@ function renderPerChordInsights(progression, primaryKey) {
     fittingScales.forEach((scale) => {
       const btn = document.createElement('button');
       btn.className = 'ghost';
-      btn.textContent = `Show ${formatScaleName(scale.name)}`;
+      const shownScaleName = scale.displayName || scale.name;
+      btn.textContent = `Show ${formatScaleName(shownScaleName)}`;
       btn.addEventListener('click', () => {
-        renderSharedFretboard(scale.root, scale.type, chord, `${formatScaleName(chord.symbol)} target: ${scale.reason}`);
+        renderSharedFretboard(scale.root, scale.type, chord, `${formatScaleName(chord.symbol)} target: ${formatScaleName(shownScaleName)} · ${scale.reason}`);
       });
       block.appendChild(btn);
 
@@ -729,17 +755,37 @@ function scalePriority(type = '') {
   return idx === -1 ? commonScalePriority.length + 99 : idx;
 }
 
+function resolveScaleTypeForRoot(root, requestedType) {
+  const attempts = [requestedType, ...(scaleTypeAliases[requestedType] || [])];
+
+  for (const type of attempts) {
+    const name = `${root} ${type}`;
+    const scale = Tonal.Scale.get(name);
+    if (!scale.empty && scale.notes?.length) {
+      return {
+        type,
+        requestedType,
+        name,
+        notes: scale.notes,
+        displayName: type === requestedType ? name : `${root} ${requestedType} (${type})`
+      };
+    }
+  }
+
+  return null;
+}
+
 function getFallbackScaleTypes(chord) {
   const symbol = chord.symbol || chord.name || '';
 
   if (/m7b5|ø/i.test(symbol)) return ['locrian', 'locrian #2', 'dorian b2'];
   if (/dim|o/i.test(symbol)) return ['whole-half diminished', 'half-whole diminished'];
-  if (/7b9|7alt|7#9|7#5|7b13/i.test(symbol)) return ['altered', 'phrygian dominant', 'half-whole diminished', 'whole tone', 'mixolydian'];
-  if (/13|9|11|7/i.test(symbol)) return ['mixolydian', 'dominant bebop', 'lydian dominant', 'whole tone', 'blues'];
-  if (/m6|mmaj7|m\(maj7\)/i.test(symbol)) return ['melodic minor', 'harmonic minor', 'dorian', 'aeolian'];
-  if (/m(?!aj)/i.test(symbol)) return ['dorian', 'aeolian', 'minor pentatonic', 'blues', 'melodic minor', 'harmonic minor'];
+  if (/7b9|7alt|7#9|7#5|7b13/i.test(symbol)) return ['altered', 'phrygian dominant', 'flamenco', 'double harmonic major', 'spanish heptatonic', 'half-whole diminished', 'whole tone', 'mixolydian'];
+  if (/13|9|11|7/i.test(symbol)) return ['mixolydian', 'dominant bebop', 'lydian dominant', 'phrygian dominant', 'flamenco', 'whole tone', 'blues'];
+  if (/m6|mmaj7|m\(maj7\)/i.test(symbol)) return ['melodic minor', 'harmonic minor', 'dorian', 'aeolian', 'minor blues'];
+  if (/m(?!aj)/i.test(symbol)) return ['dorian', 'aeolian', 'minor pentatonic', 'minor blues', 'blues', 'melodic minor', 'harmonic minor'];
 
-  return ['ionian', 'lydian', 'major pentatonic', 'mixolydian', 'major bebop'];
+  return ['ionian', 'lydian', 'major pentatonic', 'major blues', 'mixolydian', 'major bebop', 'double harmonic major'];
 }
 
 function getChordScaleOptions(chord) {
@@ -751,22 +797,23 @@ function getChordScaleOptions(chord) {
 
   return candidateTypes
     .map((type) => {
-      const name = `${chord.tonic} ${type}`;
-      const scale = Tonal.Scale.get(name);
-      if (scale.empty || !scale.notes?.length) return null;
+      const resolved = resolveScaleTypeForRoot(chord.tonic, type);
+      if (!resolved) return null;
 
-      const fit = chord.notes.every((note) => scale.notes.some((scaleNote) => isSamePitchClass(scaleNote, note)));
+      const fit = chord.notes.every((note) => resolved.notes.some((scaleNote) => isSamePitchClass(scaleNote, note)));
       if (!fit) return null;
 
       return {
         root: chord.tonic,
-        type,
-        name,
-        reason: scaleFlavors[type] || `${type} color for ${chord.symbol}`
+        type: resolved.type,
+        labelType: resolved.requestedType,
+        name: resolved.name,
+        displayName: resolved.displayName,
+        reason: scaleFlavors[resolved.requestedType] || scaleFlavors[resolved.type] || `${type} color for ${chord.symbol}`
       };
     })
     .filter(Boolean)
-    .sort((a, b) => scalePriority(a.type) - scalePriority(b.type))
+    .sort((a, b) => scalePriority(a.labelType || a.type) - scalePriority(b.labelType || b.type))
     .slice(0, 8);
 }
 
