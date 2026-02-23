@@ -6,37 +6,59 @@ const scaleFlavors = {
   aeolian: 'Natural minor gravity and emotional depth.',
   phrygian: 'Dark and tense minor color with b2 bite.',
   locrian: 'Half-diminished tension and unstable color.',
+  'locrian #2': 'Half-diminished color with a smoother 2nd.',
   'major pentatonic': 'Open and consonant major sound for hooks and phrases.',
   'minor pentatonic': 'Core guitar vocabulary for expressive minor lines.',
   blues: 'Minor pentatonic + blue note for grit and tension-release.',
   'harmonic minor': 'Dramatic minor color with strong leading tone.',
-  'melodic minor': 'Jazz-forward minor language with smooth upper structure.'
+  'melodic minor': 'Jazz-forward minor language with smooth upper structure.',
+  'lydian dominant': 'Dominant sonority with #11 brightness.',
+  altered: 'Maximum altered dominant tension before resolution.',
+  'phrygian dominant': 'Exotic dominant color from harmonic minor.',
+  'whole tone': 'Symmetrical dominant color with dreamy ambiguity.',
+  'whole-half diminished': 'Symmetrical diminished palette for dominant movement.',
+  'half-whole diminished': 'Classic 8-note dominant diminished sound.',
+  'dorian b2': 'Dark dorian variant with b2 tension.',
+  'major bebop': 'Major scale plus passing tone for linear bebop phrasing.',
+  'dominant bebop': 'Mixolydian plus passing tone for dominant lines.'
 };
 
 const commonScalePriority = [
   'ionian',
-  'aeolian',
-  'dorian',
-  'mixolydian',
   'lydian',
-  'minor pentatonic',
+  'mixolydian',
   'major pentatonic',
+  'major bebop',
+  'dorian',
+  'aeolian',
+  'minor pentatonic',
   'blues',
-  'harmonic minor',
   'melodic minor',
+  'harmonic minor',
   'phrygian',
-  'locrian'
+  'locrian',
+  'locrian #2',
+  'lydian dominant',
+  'dominant bebop',
+  'altered',
+  'phrygian dominant',
+  'whole tone',
+  'half-whole diminished',
+  'whole-half diminished',
+  'dorian b2'
 ];
 
 const chordScaleRules = [
-  { matcher: /maj7|maj9|Δ/i, scales: ['ionian', 'lydian'] },
+  { matcher: /maj7#11|maj9#11|maj13#11/i, scales: ['lydian', 'ionian'] },
+  { matcher: /maj7|maj9|maj6|Δ/i, scales: ['ionian', 'lydian', 'major pentatonic', 'major bebop'] },
   { matcher: /m7b5|ø/i, scales: ['locrian', 'locrian #2'] },
-  { matcher: /m(?!aj)/i, scales: ['dorian', 'aeolian', 'minor pentatonic', 'blues'] },
-  { matcher: /7#11/i, scales: ['lydian dominant', 'mixolydian'] },
-  { matcher: /7b9|7alt|7#9|7#5|7b13/i, scales: ['phrygian dominant', 'altered'] },
-  { matcher: /7/i, scales: ['mixolydian', 'minor pentatonic', 'blues'] },
-  { matcher: /dim|o/i, scales: ['whole-half diminished'] },
-  { matcher: /sus/i, scales: ['mixolydian', 'dorian'] }
+  { matcher: /m6|mmaj7|m\(maj7\)/i, scales: ['melodic minor', 'dorian', 'harmonic minor'] },
+  { matcher: /m(?!aj)/i, scales: ['dorian', 'aeolian', 'minor pentatonic', 'blues', 'melodic minor', 'dorian b2'] },
+  { matcher: /7#11/i, scales: ['lydian dominant', 'mixolydian', 'whole tone'] },
+  { matcher: /7b9|7alt|7#9|7#5|7b13/i, scales: ['altered', 'phrygian dominant', 'half-whole diminished', 'whole tone'] },
+  { matcher: /13|9|11|7/i, scales: ['mixolydian', 'dominant bebop', 'lydian dominant', 'minor pentatonic', 'blues'] },
+  { matcher: /dim|o/i, scales: ['whole-half diminished', 'half-whole diminished'] },
+  { matcher: /sus/i, scales: ['mixolydian', 'dorian', 'major pentatonic'] }
 ];
 
 const chordRootSelect = document.getElementById('chord-root');
@@ -96,7 +118,6 @@ function setupChordBuilder() {
     chordQualitySelect.appendChild(option);
   });
 
-  ['Am7', 'D7', 'Gmaj7'].forEach((defaultChord) => chordProgressionTokens.push(defaultChord));
   renderSelectedChords();
 }
 
@@ -338,7 +359,7 @@ function analyzeChords() {
     wholeOutput.innerHTML = '<h2>Whole Song Musical Direction</h2><p>Add at least one chord to generate scale ideas.</p>';
     perOutput.innerHTML = '<h2>Per Chord Strategy</h2>';
     geniusOutput.innerHTML = '<h2>Genius Note Navigator</h2>';
-    renderSharedFretboard('C', 'ionian', { notes: [] }, 'Waiting for chords. Showing C ionian as a neutral map.', []);
+    renderSharedFretboard(null, null, { notes: [] }, '', [], { showAllNotes: true });
     return;
   }
 
@@ -378,8 +399,8 @@ function detectKeyCenters(progression) {
     ].forEach(({ mode, keyObj }) => {
       if (!keyObj?.scale?.length) return;
 
-      const noteCoverage = allNotes.filter((n) => keyObj.scale.includes(n)).length / allNotes.length;
-      const chordCoverage = progression.filter((chord) => chord.notes.every((n) => keyObj.scale.includes(n))).length /
+      const noteCoverage = allNotes.filter((n) => keyObj.scale.some((scaleNote) => isSamePitchClass(scaleNote, n))).length / allNotes.length;
+      const chordCoverage = progression.filter((chord) => chord.notes.every((n) => keyObj.scale.some((scaleNote) => isSamePitchClass(scaleNote, n)))).length /
         progression.length;
       const tonicBonus = progression[0]?.tonic === root ? 0.08 : 0;
       const cadenceBonus = cadenceBonusForKey(progression, keyObj.scale, root);
@@ -606,7 +627,7 @@ function scoreCandidateNote(note, chord, nextChord, keySummary) {
   if (chordNotes[3] === note) score += 0.86;
   if (!chordNotes.includes(note)) score += extensionScore(interval, chord.symbol || chord.name || '');
 
-  if (keySummary?.scale?.includes(note)) score += 0.35;
+  if (keySummary?.scale?.some((scaleNote) => isSamePitchClass(scaleNote, note))) score += 0.35;
 
   if (nextChord?.notes?.length) {
     const closest = nearestSemitoneDistance(note, nextChord.notes);
@@ -664,7 +685,9 @@ function pickClosestResolution(note, targetNotes = []) {
 function buildNoteReason(note, chord, nextChord, keySummary) {
   const reasons = [];
   if ((chord.notes || []).includes(note)) reasons.push('strong chord tone');
-  if (keySummary?.scale?.includes(note)) reasons.push(`inside ${formatScaleName(keySummary.label)}`);
+  if (keySummary?.scale?.some((scaleNote) => isSamePitchClass(scaleNote, note))) {
+    reasons.push(`inside ${formatScaleName(keySummary.label)}`);
+  }
   if (nextChord?.notes?.length && nearestSemitoneDistance(note, nextChord.notes) <= 1) {
     reasons.push(`resolves by step into ${nextChord.symbol}`);
   }
@@ -701,21 +724,38 @@ function isDominant(symbol = '') {
   return /7/.test(symbol) && !/maj7|m7b5|ø/.test(symbol);
 }
 
+function scalePriority(type = '') {
+  const idx = commonScalePriority.indexOf(type);
+  return idx === -1 ? commonScalePriority.length + 99 : idx;
+}
+
+function getFallbackScaleTypes(chord) {
+  const symbol = chord.symbol || chord.name || '';
+
+  if (/m7b5|ø/i.test(symbol)) return ['locrian', 'locrian #2', 'dorian b2'];
+  if (/dim|o/i.test(symbol)) return ['whole-half diminished', 'half-whole diminished'];
+  if (/7b9|7alt|7#9|7#5|7b13/i.test(symbol)) return ['altered', 'phrygian dominant', 'half-whole diminished', 'whole tone', 'mixolydian'];
+  if (/13|9|11|7/i.test(symbol)) return ['mixolydian', 'dominant bebop', 'lydian dominant', 'whole tone', 'blues'];
+  if (/m6|mmaj7|m\(maj7\)/i.test(symbol)) return ['melodic minor', 'harmonic minor', 'dorian', 'aeolian'];
+  if (/m(?!aj)/i.test(symbol)) return ['dorian', 'aeolian', 'minor pentatonic', 'blues', 'melodic minor', 'harmonic minor'];
+
+  return ['ionian', 'lydian', 'major pentatonic', 'mixolydian', 'major bebop'];
+}
+
 function getChordScaleOptions(chord) {
   if (!chord.tonic) return [];
 
   const qualityMatch = chordScaleRules.find((rule) => rule.matcher.test(chord.symbol || chord.name));
-  const candidateTypes = qualityMatch?.scales?.length
-    ? qualityMatch.scales
-    : ['ionian', 'major pentatonic', 'mixolydian'];
+  const ruleTypes = qualityMatch?.scales?.length ? qualityMatch.scales : [];
+  const candidateTypes = [...new Set([...ruleTypes, ...getFallbackScaleTypes(chord)])];
 
   return candidateTypes
     .map((type) => {
       const name = `${chord.tonic} ${type}`;
       const scale = Tonal.Scale.get(name);
-      if (scale.empty) return null;
+      if (scale.empty || !scale.notes?.length) return null;
 
-      const fit = chord.notes.every((note) => scale.notes.includes(note));
+      const fit = chord.notes.every((note) => scale.notes.some((scaleNote) => isSamePitchClass(scaleNote, note)));
       if (!fit) return null;
 
       return {
@@ -726,13 +766,14 @@ function getChordScaleOptions(chord) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => commonScalePriority.indexOf(a.type) - commonScalePriority.indexOf(b.type));
+    .sort((a, b) => scalePriority(a.type) - scalePriority(b.type))
+    .slice(0, 8);
 }
 
 function romanForChord(chord, scaleNotes, keyRoot) {
   if (!chord.tonic || !scaleNotes?.length) return 'outside';
   const romanNumerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
-  const idx = scaleNotes.indexOf(chord.tonic);
+  const idx = scaleNotes.findIndex((scaleNote) => isSamePitchClass(scaleNote, chord.tonic));
   if (idx === -1) return 'outside';
 
   const numeral = romanNumerals[idx];
@@ -745,10 +786,11 @@ function romanForChord(chord, scaleNotes, keyRoot) {
   return numeral;
 }
 
-function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = []) {
+function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = [], options = {}) {
   const tuning = ['E4', 'B3', 'G3', 'D3', 'A2', 'E2'];
   const fretCount = 15;
-  const scaleNotes = Tonal.Scale.get(`${root} ${type}`).notes || [];
+  const showAllNotes = Boolean(options.showAllNotes) || !root || !type;
+  const scaleNotes = showAllNotes ? [] : Tonal.Scale.get(`${root} ${type}`).notes || [];
 
   sharedFretboard.innerHTML = '';
   audioState.noteMap = new Map();
@@ -793,7 +835,7 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
       noteButton.dataset.string = String(stringNumber);
       noteButton.dataset.fret = String(fret);
 
-      const inScale = scaleNotes.some((scaleNote) => isSamePitchClass(scaleNote, note));
+      const inScale = showAllNotes || scaleNotes.some((scaleNote) => isSamePitchClass(scaleNote, note));
       if (inScale) {
         noteButton.textContent = noteLabel;
       }
@@ -807,7 +849,7 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
   });
 
   sharedFretboard.appendChild(grid);
-  fretboardCaption.textContent = captionText;
+  fretboardCaption.textContent = captionText || (showAllNotes ? 'All notes on the fretboard.' : '');
 }
 
 function attachFretboardNoteMetadata() {
@@ -919,9 +961,9 @@ function normalizeNoteName(value = '') {
 }
 
 function isSamePitchClass(a, b) {
-  const left = Tonal.Note.pitchClass(a);
-  const right = Tonal.Note.pitchClass(b);
-  return left && right && left === right;
+  const left = Tonal.Note.chroma(a);
+  const right = Tonal.Note.chroma(b);
+  return left !== null && left !== undefined && right !== null && right !== undefined && left === right;
 }
 
 function getPossibleRoots(progression) {
