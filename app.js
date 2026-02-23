@@ -559,6 +559,26 @@ function cadenceBonusForKey(progression, scaleNotes, root) {
   return Math.min(bonus, 0.09);
 }
 
+function computeScaleCoverage(progression, scaleNotes = [], root = '') {
+  if (!progression.length || !scaleNotes.length) {
+    return { noteCoverage: 0, chordCoverage: 0, confidence: 0 };
+  }
+
+  const allNotes = [...new Set(progression.flatMap((chord) => chord.notes || []))];
+  const noteCoverage = allNotes.length
+    ? allNotes.filter((n) => scaleNotes.some((s) => isSamePitchClass(s, n))).length / allNotes.length
+    : 0;
+
+  const chordCoverage = progression.length
+    ? progression.filter((chord) => (chord.notes || []).every((n) => scaleNotes.some((s) => isSamePitchClass(s, n)))).length / progression.length
+    : 0;
+
+  const tonicBonus = progression[0]?.tonic && root && isSamePitchClass(progression[0].tonic, root) ? 0.06 : 0;
+  const confidence = Math.min(1, noteCoverage * 0.58 + chordCoverage * 0.36 + tonicBonus);
+
+  return { noteCoverage, chordCoverage, confidence };
+}
+
 function renderWholeSongInsights(progression, keyCandidates) {
   if (!keyCandidates.length) {
     wholeOutput.innerHTML += '<p>No convincing key center was detected.</p>';
@@ -576,25 +596,37 @@ function renderWholeSongInsights(progression, keyCandidates) {
     appState.selectedScaleKey = selectedScales[0]?.name || null;
   }
 
+  const selectedScale = selectedScales.find((scale) => scale.name === appState.selectedScaleKey) || selectedScales[0] || null;
+  const selectedScaleName = selectedScale ? (selectedScale.displayName || selectedScale.name) : selectedCandidate.label;
+  const selectedScaleNotes = selectedScale
+    ? (Tonal.Scale.get(selectedScale.name).notes || [])
+    : (selectedCandidate.scale || []);
+
+  const { noteCoverage, chordCoverage, confidence } = computeScaleCoverage(
+    progression,
+    selectedScaleNotes,
+    selectedScale?.root || selectedCandidate.root
+  );
+
   const summary = document.createElement('div');
   summary.className = 'scale-block';
 
   const h4 = document.createElement('h4');
-  h4.textContent = `${appState.selectedWholeKeyIndex + 1}. ${formatScaleName(selectedCandidate.label).toUpperCase()} · ${t('confidence')} ${(selectedCandidate.score * 100).toFixed(0)}%`;
+  h4.textContent = `${appState.selectedWholeKeyIndex + 1}. ${formatScaleName(selectedScaleName).toUpperCase()} · ${t('confidence')} ${(confidence * 100).toFixed(0)}%`;
   summary.appendChild(h4);
 
   const p = document.createElement('p');
   p.className = 'scale-meta';
-  p.textContent = `${t('scaleNotes')}: ${selectedCandidate.scale.map(formatNoteName).join(' · ')}`;
+  p.textContent = `${t('scaleNotes')}: ${selectedScaleNotes.map(formatNoteName).join(' · ')}`;
   summary.appendChild(p);
 
   const p2 = document.createElement('p');
   p2.className = 'summary-note';
-  p2.textContent = `${t('coverage')}: ${t('notes')} ${(selectedCandidate.noteCoverage * 100).toFixed(0)}% · ${t('chords')} ${(selectedCandidate.chordCoverage * 100).toFixed(0)}%`;
+  p2.textContent = `${t('coverage')}: ${t('notes')} ${(noteCoverage * 100).toFixed(0)}% · ${t('chords')} ${(chordCoverage * 100).toFixed(0)}%`;
   summary.appendChild(p2);
 
   const functionMap = progression
-    .map((chord) => `${formatChordLabel(chord.symbol)}: ${romanForChord(chord, selectedCandidate.scale, selectedCandidate.root)}`)
+    .map((chord) => `${formatChordLabel(chord.symbol)}: ${romanForChord(chord, selectedScaleNotes, selectedScale?.root || selectedCandidate.root)}`)
     .join(' | ');
   const p3 = document.createElement('p');
   p3.className = 'summary-note';
