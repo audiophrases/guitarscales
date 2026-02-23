@@ -8,10 +8,19 @@
   </head>
   <body>
     <main>
-      <div class="chord-builder" aria-label="Chord builder">
-        <select id="chord-root" aria-label="Chord root"></select>
-        <select id="chord-quality" aria-label="Chord quality"></select>
-        <button id="add-chord" type="button">Add chord</button>
+      <div class="top-controls">
+        <div class="chord-builder" aria-label="Chord builder">
+          <select id="chord-root" aria-label="Chord root"></select>
+          <select id="chord-quality" aria-label="Chord quality"></select>
+          <button id="add-chord" type="button">Add chord</button>
+        </div>
+        <div class="lang-switch">
+          <label for="language-select">Language</label>
+          <select id="language-select" aria-label="Language selector">
+            <option value="en">EN</option>
+            <option value="ca">CA</option>
+          </select>
+        </div>
       </div>
       <div id="selected-chords" class="selected-chords" aria-live="polite"></div>
       <p id="runtime-status" class="summary-note" aria-live="polite"></p>

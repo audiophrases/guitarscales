@@ -80,6 +80,7 @@ const scaleTypeAliases = {
 const chordRootSelect = document.getElementById('chord-root');
 const chordQualitySelect = document.getElementById('chord-quality');
 const addChordButton = document.getElementById('add-chord');
+const languageSelect = document.getElementById('language-select');
 const selectedChords = document.getElementById('selected-chords');
 const runtimeStatus = document.getElementById('runtime-status');
 const wholeOutput = document.getElementById('whole-song');
@@ -88,6 +89,12 @@ const geniusOutput = document.getElementById('genius-guide');
 const sharedFretboard = document.getElementById('shared-fretboard');
 const fretboardCaption = document.getElementById('fretboard-caption');
 const chordProgressionTokens = [];
+
+const appState = {
+  language: 'en',
+  selectedWholeKeyIndex: 0,
+  selectedScaleKey: null
+};
 const audioState = {
   context: null,
   masterGain: null,
@@ -99,6 +106,65 @@ const audioState = {
 const chordRoots = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const chordQualities = ['m', '7', 'm7', 'maj7', 'sus4', '6', '9', 'm7b5', 'dim'];
 
+const textByLang = {
+  en: {
+    addChord: 'Add chord',
+    noChords: 'No chords selected yet. Add chords above to begin.',
+    wholeSong: 'Whole Song Musical Direction',
+    perChord: 'Per Chord Strategy',
+    genius: 'Genius Note Navigator',
+    addAtLeastOne: 'Add at least one chord to generate scale ideas.',
+    scaleNotes: 'Scale notes',
+    coverage: 'Coverage',
+    notes: 'notes',
+    chords: 'chords',
+    functionalMap: 'Functional map',
+    suggestedScales: 'Suggested scales',
+    chooseScale: 'Click a scale name to show it on the fretboard.',
+    likelyFunctionIn: 'Likely function in',
+    likelyFunctionUnknown: 'Likely function: tonal center unclear, using chord-quality strategy.',
+    noDirectMapping: 'No direct mapping found.',
+    allNotesBoard: 'All notes on the fretboard.',
+    target: 'target',
+    confidence: 'confidence',
+    cadenceIntelligence: 'Cadence intelligence',
+    noStableKey: 'No stable key center found, so cadence analysis is interval-driven.',
+    mostlyLinear: 'mostly linear/modal movement with no strong classical cadence.',
+    bestNote: 'Best note',
+    alternatives: 'Alternatives',
+    microLine: 'Micro-line',
+    end: 'end'
+  },
+  ca: {
+    addChord: 'Afegir acord',
+    noChords: 'Encara no hi ha acords. Afegeix acords a sobre per començar.',
+    wholeSong: 'Direcció musical de tota la cançó',
+    perChord: 'Estratègia per acord',
+    genius: 'Navegador de notes clau',
+    addAtLeastOne: 'Afegeix almenys un acord per generar idees d’escales.',
+    scaleNotes: 'Notes de l’escala',
+    coverage: 'Cobertura',
+    notes: 'notes',
+    chords: 'acords',
+    functionalMap: 'Mapa funcional',
+    suggestedScales: 'Escales suggerides',
+    chooseScale: 'Fes clic en una escala per mostrar-la al màstil.',
+    likelyFunctionIn: 'Funció probable a',
+    likelyFunctionUnknown: 'Funció probable: centre tonal poc clar; s’aplica estratègia per qualitat d’acord.',
+    noDirectMapping: 'No s’ha trobat un encaix directe.',
+    allNotesBoard: 'Totes les notes al màstil.',
+    target: 'objectiu',
+    confidence: 'confiança',
+    cadenceIntelligence: 'Intel·ligència cadencial',
+    noStableKey: 'No s’ha detectat un centre tonal estable, així que l’anàlisi cadencial és per intervals.',
+    mostlyLinear: 'moviment principalment lineal/modal sense una cadència clàssica forta.',
+    bestNote: 'Millor nota',
+    alternatives: 'Alternatives',
+    microLine: 'Micro-línia',
+    end: 'final'
+  }
+};
+
 initializeApp();
 
 function initializeApp() {
@@ -107,18 +173,48 @@ function initializeApp() {
     return;
   }
 
+  setupLanguageSelector();
   setupChordBuilder();
   setRuntimeStatus('');
   addChordButton.addEventListener('click', addSelectedChord);
-
+  applyLanguage();
   analyzeChords();
+}
+
+function setupLanguageSelector() {
+  if (!languageSelect) return;
+
+  languageSelect.value = appState.language;
+  languageSelect.addEventListener('change', () => {
+    appState.language = languageSelect.value === 'ca' ? 'ca' : 'en';
+    applyLanguage();
+    renderSelectedChords();
+    analyzeChords();
+  });
+}
+
+function t(key) {
+  return textByLang[appState.language]?.[key] ?? textByLang.en?.[key] ?? key;
+}
+
+function applyLanguage() {
+  if (addChordButton) addChordButton.textContent = t('addChord');
+  refreshChordRootLabels();
+}
+
+function refreshChordRootLabels() {
+  if (!chordRootSelect) return;
+  Array.from(chordRootSelect.options).forEach((option) => {
+    if (!option.value) return;
+    option.textContent = formatNoteName(option.value);
+  });
 }
 
 function setupChordBuilder() {
   chordRoots.forEach((root) => {
     const option = document.createElement('option');
     option.value = root;
-    option.textContent = root;
+    option.textContent = formatNoteName(root);
     chordRootSelect.appendChild(option);
   });
 
@@ -161,7 +257,7 @@ function renderSelectedChords() {
   selectedChords.innerHTML = '';
 
   if (!chordProgressionTokens.length) {
-    selectedChords.innerHTML = '<p class="summary-note">No chords selected yet. Add chords above to begin.</p>';
+    selectedChords.innerHTML = `<p class="summary-note">${t('noChords')}</p>`;
     return;
   }
 
@@ -172,7 +268,7 @@ function renderSelectedChords() {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'chord-chip';
-    chip.textContent = `${index + 1}. ${token}`;
+    chip.textContent = `${index + 1}. ${formatChordLabel(token)}`;
     chip.title = 'Click to play this chord';
     chip.addEventListener('click', () => {
       const chord = Tonal.Chord.get(token);
@@ -372,16 +468,18 @@ function analyzeChords() {
     .filter((chord) => !chord.empty);
 
   if (!progression.length) {
-    wholeOutput.innerHTML = '<h2>Whole Song Musical Direction</h2><p>Add at least one chord to generate scale ideas.</p>';
-    perOutput.innerHTML = '<h2>Per Chord Strategy</h2>';
-    geniusOutput.innerHTML = '<h2>Genius Note Navigator</h2>';
+    appState.selectedWholeKeyIndex = 0;
+    appState.selectedScaleKey = null;
+    wholeOutput.innerHTML = `<h2>${t('wholeSong')}</h2><p>${t('addAtLeastOne')}</p>`;
+    perOutput.innerHTML = `<h2>${t('perChord')}</h2>`;
+    geniusOutput.innerHTML = `<h2>${t('genius')}</h2>`;
     renderSharedFretboard(null, null, { notes: [] }, '', [], { showAllNotes: true });
     return;
   }
 
-  wholeOutput.innerHTML = '<h2>Whole Song Musical Direction</h2>';
-  perOutput.innerHTML = '<h2>Per Chord Strategy</h2>';
-  geniusOutput.innerHTML = '<h2>Genius Note Navigator</h2>';
+  wholeOutput.innerHTML = `<h2>${t('wholeSong')}</h2>`;
+  perOutput.innerHTML = `<h2>${t('perChord')}</h2>`;
+  geniusOutput.innerHTML = `<h2>${t('genius')}</h2>`;
 
   const keyCandidates = detectKeyCenters(progression);
   const keySummary = keyCandidates[0];
@@ -390,12 +488,21 @@ function analyzeChords() {
   renderPerChordInsights(progression, keySummary);
   renderGeniusNavigator(progression, keySummary);
 
-  const focusScale = keySummary ? { root: keySummary.root, type: keySummary.mode === 'minor' ? 'aeolian' : 'ionian' } : { root: progression[0].tonic, type: 'ionian' };
+  const selectedCandidate = keyCandidates[appState.selectedWholeKeyIndex] || keySummary;
+  const selectedGlobalScales = selectedCandidate ? suggestGlobalScales(selectedCandidate) : [];
+  const selectedScale = selectedGlobalScales.find((scale) => scale.name === appState.selectedScaleKey) || selectedGlobalScales[0];
+
+  const focusScale = selectedScale
+    ? { root: selectedScale.root, type: selectedScale.type, label: selectedScale.displayName || selectedScale.name }
+    : keySummary
+      ? { root: keySummary.root, type: keySummary.mode === 'minor' ? 'aeolian' : 'ionian', label: `${keySummary.root} ${keySummary.mode === 'minor' ? 'aeolian' : 'ionian'}` }
+      : { root: progression[0].tonic, type: 'ionian', label: `${progression[0].tonic} ionian` };
+
   renderSharedFretboard(
     focusScale.root,
     focusScale.type,
     progression[0],
-    `${focusScale.root} ${focusScale.type} over ${progression[0].symbol}`,
+    `${formatScaleName(focusScale.label)} · ${formatChordLabel(progression[0].symbol)}`,
     progression[1]?.notes || []
   );
 }
@@ -458,49 +565,89 @@ function renderWholeSongInsights(progression, keyCandidates) {
     return;
   }
 
+  appState.selectedWholeKeyIndex = Math.min(
+    Math.max(appState.selectedWholeKeyIndex, 0),
+    keyCandidates.length - 1
+  );
+
+  const selectedCandidate = keyCandidates[appState.selectedWholeKeyIndex];
+  const selectedScales = suggestGlobalScales(selectedCandidate);
+  if (!selectedScales.some((scale) => scale.name === appState.selectedScaleKey)) {
+    appState.selectedScaleKey = selectedScales[0]?.name || null;
+  }
+
+  const summary = document.createElement('div');
+  summary.className = 'scale-block';
+
+  const h4 = document.createElement('h4');
+  h4.textContent = `${appState.selectedWholeKeyIndex + 1}. ${formatScaleName(selectedCandidate.label).toUpperCase()} · ${t('confidence')} ${(selectedCandidate.score * 100).toFixed(0)}%`;
+  summary.appendChild(h4);
+
+  const p = document.createElement('p');
+  p.className = 'scale-meta';
+  p.textContent = `${t('scaleNotes')}: ${selectedCandidate.scale.map(formatNoteName).join(' · ')}`;
+  summary.appendChild(p);
+
+  const p2 = document.createElement('p');
+  p2.className = 'summary-note';
+  p2.textContent = `${t('coverage')}: ${t('notes')} ${(selectedCandidate.noteCoverage * 100).toFixed(0)}% · ${t('chords')} ${(selectedCandidate.chordCoverage * 100).toFixed(0)}%`;
+  summary.appendChild(p2);
+
+  const functionMap = progression
+    .map((chord) => `${formatChordLabel(chord.symbol)}: ${romanForChord(chord, selectedCandidate.scale, selectedCandidate.root)}`)
+    .join(' | ');
+  const p3 = document.createElement('p');
+  p3.className = 'summary-note';
+  p3.textContent = `${t('functionalMap')}: ${functionMap}`;
+  summary.appendChild(p3);
+
+  const p4 = document.createElement('p');
+  p4.className = 'summary-note';
+  p4.textContent = `${t('chooseScale')}`;
+  summary.appendChild(p4);
+
+  wholeOutput.appendChild(summary);
+
   keyCandidates.forEach((keyCandidate, index) => {
     const block = document.createElement('div');
     block.className = 'scale-block';
 
-    const h4 = document.createElement('h4');
-    h4.textContent = `${index + 1}. ${formatScaleName(keyCandidate.label).toUpperCase()} · confidence ${(keyCandidate.score * 100).toFixed(0)}%`;
-    block.appendChild(h4);
+    const keyButton = document.createElement('button');
+    keyButton.className = `scale-link ${index === appState.selectedWholeKeyIndex ? 'active' : ''}`;
+    keyButton.textContent = `${index + 1}. ${formatScaleName(keyCandidate.label).toUpperCase()}`;
+    keyButton.addEventListener('click', () => {
+      appState.selectedWholeKeyIndex = index;
+      appState.selectedScaleKey = null;
+      renderWholeSongInsights(progression, keyCandidates);
 
-    const p = document.createElement('p');
-    p.className = 'scale-meta';
-    p.textContent = `Scale notes: ${keyCandidate.scale.map(formatNoteName).join(' · ')}`;
-    block.appendChild(p);
+      const firstScale = suggestGlobalScales(keyCandidate)[0];
+      if (firstScale) {
+        const shownScaleName = firstScale.displayName || firstScale.name;
+        renderSharedFretboard(firstScale.root, firstScale.type, progression[0], `${formatScaleName(shownScaleName)} · ${firstScale.reason}`);
+      }
+    });
+    block.appendChild(keyButton);
 
-    const p2 = document.createElement('p');
-    p2.className = 'summary-note';
-    p2.textContent = `Coverage: notes ${(keyCandidate.noteCoverage * 100).toFixed(0)}% · chords ${(keyCandidate.chordCoverage * 100).toFixed(0)}%`;
-    block.appendChild(p2);
+    const links = document.createElement('div');
+    links.className = 'scale-links';
 
-    const functionMap = progression
-      .map((chord) => `${formatScaleName(chord.symbol)}: ${romanForChord(chord, keyCandidate.scale, keyCandidate.root)}`)
-      .join(' | ');
-    const p3 = document.createElement('p');
-    p3.className = 'summary-note';
-    p3.textContent = `Functional map: ${functionMap}`;
-    block.appendChild(p3);
-
-    const strongScales = suggestGlobalScales(keyCandidate);
-    strongScales.forEach((scale) => {
+    suggestGlobalScales(keyCandidate).forEach((scale) => {
       const shownScaleName = scale.displayName || scale.name;
-      const badge = document.createElement('span');
-      badge.className = 'badge';
-      badge.textContent = `${formatScaleName(shownScaleName)} (${scale.reason})`;
-      block.appendChild(badge);
-
-      const btn = document.createElement('button');
-      btn.className = 'ghost';
-      btn.textContent = `Show ${formatScaleName(shownScaleName)}`;
-      btn.addEventListener('click', () => {
-        renderSharedFretboard(scale.root, scale.type, progression[0], `${formatScaleName(shownScaleName)}: ${scale.reason}`);
+      const scaleBtn = document.createElement('button');
+      const active = index === appState.selectedWholeKeyIndex && appState.selectedScaleKey === scale.name;
+      scaleBtn.className = `scale-link ${active ? 'active' : ''}`;
+      scaleBtn.textContent = formatScaleName(shownScaleName);
+      scaleBtn.title = scale.reason;
+      scaleBtn.addEventListener('click', () => {
+        appState.selectedWholeKeyIndex = index;
+        appState.selectedScaleKey = scale.name;
+        renderWholeSongInsights(progression, keyCandidates);
+        renderSharedFretboard(scale.root, scale.type, progression[0], `${formatScaleName(shownScaleName)} · ${scale.reason}`);
       });
-      block.appendChild(btn);
+      links.appendChild(scaleBtn);
     });
 
+    block.appendChild(links);
     wholeOutput.appendChild(block);
   });
 }
@@ -535,42 +682,43 @@ function renderPerChordInsights(progression, primaryKey) {
     block.className = 'scale-block';
 
     const h4 = document.createElement('h4');
-    h4.textContent = `Chord ${index + 1}: ${formatScaleName(chord.symbol)}`;
+    h4.textContent = `Chord ${index + 1}: ${formatChordLabel(chord.symbol)}`;
     block.appendChild(h4);
 
     const fn = document.createElement('p');
     fn.className = 'summary-note';
     if (primaryKey) {
-      fn.textContent = `Likely function in ${primaryKey.label}: ${romanForChord(chord, primaryKey.scale, primaryKey.root)}`;
+      fn.textContent = `${t('likelyFunctionIn')} ${formatScaleName(primaryKey.label)}: ${romanForChord(chord, primaryKey.scale, primaryKey.root)}`;
     } else {
-      fn.textContent = 'Likely function: tonal center unclear, using chord-quality strategy.';
+      fn.textContent = t('likelyFunctionUnknown');
     }
     block.appendChild(fn);
 
     const fittingScales = getChordScaleOptions(chord);
     if (!fittingScales.length) {
       const fallback = document.createElement('p');
-      fallback.textContent = 'No direct mapping found.';
+      fallback.textContent = t('noDirectMapping');
       block.appendChild(fallback);
       perOutput.appendChild(block);
       return;
     }
 
-    fittingScales.forEach((scale) => {
-      const btn = document.createElement('button');
-      btn.className = 'ghost';
-      const shownScaleName = scale.displayName || scale.name;
-      btn.textContent = `Show ${formatScaleName(shownScaleName)}`;
-      btn.addEventListener('click', () => {
-        renderSharedFretboard(scale.root, scale.type, chord, `${formatScaleName(chord.symbol)} target: ${formatScaleName(shownScaleName)} · ${scale.reason}`);
-      });
-      block.appendChild(btn);
+    const links = document.createElement('div');
+    links.className = 'scale-links';
 
-      const badge = document.createElement('span');
-      badge.className = 'badge';
-      badge.textContent = scale.reason;
-      block.appendChild(badge);
+    fittingScales.forEach((scale) => {
+      const scaleBtn = document.createElement('button');
+      scaleBtn.className = 'scale-link';
+      const shownScaleName = scale.displayName || scale.name;
+      scaleBtn.textContent = formatScaleName(shownScaleName);
+      scaleBtn.title = scale.reason;
+      scaleBtn.addEventListener('click', () => {
+        renderSharedFretboard(scale.root, scale.type, chord, `${formatChordLabel(chord.symbol)} ${t('target')}: ${formatScaleName(shownScaleName)} · ${scale.reason}`);
+      });
+      links.appendChild(scaleBtn);
     });
+
+    block.appendChild(links);
 
     perOutput.appendChild(block);
   });
@@ -595,21 +743,21 @@ function renderGeniusNavigator(progression, keySummary) {
     block.className = 'scale-block note-block';
 
     const header = document.createElement('h4');
-    header.textContent = `${index + 1}. ${formatScaleName(entry.chord)} → ${entry.nextChord ? formatScaleName(entry.nextChord) : 'end'}`;
+    header.textContent = `${index + 1}. ${formatChordLabel(entry.chord)} → ${entry.nextChord ? formatChordLabel(entry.nextChord) : t('end')}`;
     block.appendChild(header);
 
     const best = document.createElement('p');
-    best.innerHTML = `<strong>Best note:</strong> ${formatNoteName(entry.bestNote)} <span class="summary-note">(${entry.reason})</span>`;
+    best.innerHTML = `<strong>${t('bestNote')}:</strong> ${formatNoteName(entry.bestNote)} <span class="summary-note">(${entry.reason})</span>`;
     block.appendChild(best);
 
     const alt = document.createElement('p');
     alt.className = 'summary-note';
-    alt.textContent = `Alternatives: ${entry.alternatives.map(formatNoteName).join(' · ')}`;
+    alt.textContent = `${t('alternatives')}: ${entry.alternatives.map(formatNoteName).join(' · ')}`;
     block.appendChild(alt);
 
     const microLine = document.createElement('p');
     microLine.className = 'summary-note';
-    microLine.textContent = `Micro-line: ${entry.microLine.map(formatNoteName).join(' → ')}`;
+    microLine.textContent = `${t('microLine')}: ${entry.microLine.map(formatNoteName).join(' → ')}`;
     block.appendChild(microLine);
 
     geniusOutput.appendChild(block);
@@ -715,14 +863,14 @@ function buildNoteReason(note, chord, nextChord, keySummary) {
     reasons.push(`inside ${formatScaleName(keySummary.label)}`);
   }
   if (nextChord?.notes?.length && nearestSemitoneDistance(note, nextChord.notes) <= 1) {
-    reasons.push(`resolves by step into ${nextChord.symbol}`);
+    reasons.push(`resolves by step into ${formatChordLabel(nextChord.symbol)}`);
   }
   if (!reasons.length) reasons.push('color tension with directional pull');
   return reasons.join(', ');
 }
 
 function summarizeCadences(progression, keySummary) {
-  if (!keySummary) return 'No stable key center found, so cadence analysis is interval-driven.';
+  if (!keySummary) return t('noStableKey');
 
   const labels = progression.map((chord) => romanForChord(chord, keySummary.scale, keySummary.root));
   const moves = [];
@@ -736,8 +884,8 @@ function summarizeCadences(progression, keySummary) {
   });
 
   return moves.length
-    ? `Cadence intelligence: ${[...new Set(moves)].join(' · ')}.`
-    : 'Cadence intelligence: mostly linear/modal movement with no strong classical cadence.';
+    ? `${t('cadenceIntelligence')}: ${[...new Set(moves)].join(' · ')}.`
+    : `${t('cadenceIntelligence')}: ${t('mostlyLinear')}`;
 }
 
 function getExtensionPool(chord, keySummary) {
@@ -896,7 +1044,7 @@ function renderSharedFretboard(root, type, chord, captionText, nextChordNotes = 
   });
 
   sharedFretboard.appendChild(grid);
-  fretboardCaption.textContent = captionText || (showAllNotes ? 'All notes on the fretboard.' : '');
+  fretboardCaption.textContent = captionText || (showAllNotes ? t('allNotesBoard') : '');
 }
 
 function attachFretboardNoteMetadata() {
@@ -980,6 +1128,28 @@ function formatScaleName(label = '') {
   return String(label).replace(/[A-G](?:#|b)?/g, (token) => formatNoteName(token));
 }
 
+function formatChordLabel(symbol = '') {
+  if (!symbol) return '';
+  return String(symbol).replace(/[A-G](?:#|b)?/g, (token) => formatNoteName(token));
+}
+
+function toCatalanNote(note = '') {
+  const map = {
+    C: 'Do',
+    D: 'Re',
+    E: 'Mi',
+    F: 'Fa',
+    G: 'Sol',
+    A: 'La',
+    B: 'Si'
+  };
+  const normalized = normalizeNoteName(note);
+  const base = normalized.match(/^[A-G]/)?.[0];
+  if (!base) return normalized;
+  const accidental = normalized.slice(1);
+  return `${map[base] || base}${accidental}`;
+}
+
 function formatNoteName(note = '') {
   const normalized = normalizeNoteName(note);
   const replacements = {
@@ -997,7 +1167,8 @@ function formatNoteName(note = '') {
   const pitchClass = normalized.match(/[A-G](?:#|b)?/);
   if (!pitchClass) return normalized;
   const mapped = replacements[pitchClass[0]] || pitchClass[0];
-  return normalized.replace(pitchClass[0], mapped);
+  const localized = appState.language === 'ca' ? toCatalanNote(mapped) : mapped;
+  return normalized.replace(pitchClass[0], localized);
 }
 
 function normalizeNoteName(value = '') {
