@@ -580,6 +580,8 @@ function computeScaleCoverage(progression, scaleNotes = [], root = '') {
 }
 
 function renderWholeSongInsights(progression, keyCandidates) {
+  wholeOutput.innerHTML = `<h2>${t('wholeSong')}</h2>`;
+
   if (!keyCandidates.length) {
     wholeOutput.innerHTML += '<p>No convincing key center was detected.</p>';
     return;
